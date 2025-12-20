@@ -36,9 +36,9 @@ jobs:
       - name: Setup JavaFX Modules
         shell: bash
         run: |
-          # Téléchargement des JMODs JavaFX 17 pour la plateforme spécifique
-          wget https://download2.gluonhq.com/openjfx/17.0.8/openjfx-17.0.8_${{ matrix.platform }}-x64_bin-jmods.zip
-          unzip openjfx-17.0.8_${{ matrix.platform }}-x64_bin-jmods.zip
+          # Utilisation de curl pour la compatibilité Windows/Linux
+          curl -L -o javafx-jmods.zip https://download2.gluonhq.com/openjfx/17.0.8/openjfx-17.0.8_${{ matrix.platform }}-x64_bin-jmods.zip
+          unzip javafx-jmods.zip
 
       - name: Create Executable Package
         shell: bash
@@ -50,7 +50,7 @@ jobs:
                    --dest output/ \
                    --vendor "MonProjet" \
                    --module-path javafx-jmods-17.0.8/ \
-                   --add-modules javafx.controls,javafx.fxml,javafx.graphics \
+                   --add-modules javafx.controls,javafx.fxml,javafx.graphics,javafx.web,javafx.media \
                    --type ${{ matrix.os == 'windows-latest' && 'exe' || (matrix.os == 'macos-latest' && 'dmg' || 'deb') }}
 
       - name: Upload Artifacts
