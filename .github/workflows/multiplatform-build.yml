@@ -8,9 +8,16 @@ jobs:
     name: Build on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: false  # Permet aux autres SE de finir même si l'un échoue
+      fail-fast: false
       matrix:
         os: [windows-latest, macos-latest, ubuntu-latest]
+        include:
+          - os: ubuntu-latest
+            platform: linux
+          - os: windows-latest
+            platform: windows
+          - os: macos-latest
+            platform: osx
 
     steps:
       - name: Checkout code
@@ -26,10 +33,25 @@ jobs:
       - name: Build with Maven (Create Fat JAR)
         run: mvn clean package -DskipTests
 
+      - name: Setup JavaFX Modules
+        shell: bash
+        run: |
+          # Téléchargement des JMODs JavaFX 17 pour la plateforme spécifique
+          wget https://download2.gluonhq.com/openjfx/17.0.8/openjfx-17.0.8_${{ matrix.platform }}-x64_bin-jmods.zip
+          unzip openjfx-17.0.8_${{ matrix.platform }}-x64_bin-jmods.zip
+
       - name: Create Executable Package
         shell: bash
         run: |
-          jpackage --name "E-Learning-P2P" --input target/ --main-jar demo2-1.0-SNAPSHOT.jar --main-class org.example.Main --dest output/ --vendor "MonProjet" --type ${{ matrix.os == 'windows-latest' && 'exe' || (matrix.os == 'macos-latest' && 'dmg' || 'deb') }}
+          jpackage --name "E-Learning-P2P" \
+                   --input target/ \
+                   --main-jar demo2-1.0-SNAPSHOT.jar \
+                   --main-class org.example.Main \
+                   --dest output/ \
+                   --vendor "MonProjet" \
+                   --module-path javafx-jmods-17.0.8/ \
+                   --add-modules javafx.controls,javafx.fxml,javafx.graphics \
+                   --type ${{ matrix.os == 'windows-latest' && 'exe' || (matrix.os == 'macos-latest' && 'dmg' || 'deb') }}
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
