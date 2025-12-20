@@ -2,110 +2,405 @@ package org.example.controller;
 
 import javafx.fxml.FXML;
 import javafx.scene.control.*;
+import javafx.scene.layout.VBox;
 import javafx.scene.web.HTMLEditor;
-import javafx.scene.control.TreeItem;
 import javafx.stage.FileChooser;
 import org.example.model.CourseNode;
+import org.example.model.CourseNode.ContentType;
 import org.example.model.CourseNode.NodeType;
+import org.example.model.courseStructure;
+import org.example.ai.LLM;
 
-import java.io.File;
+import java.io.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.List;
+import java.util.Objects;
 
 public class CourseEditorController {
 
     @FXML private TreeView<CourseNode> courseStructureTree;
-    @FXML private TextField titleField;
     @FXML private HTMLEditor htmlEditor;
+    @FXML private TextField linkTextField;
+    @FXML private VBox resourceBox;
+    @FXML private Button importResourceButton;
+    @FXML private Button removeResourceButton;
+    @FXML private Label contentTitleLabel;
+    @FXML private Label contentTypeLabel;
+    @FXML private Label resourceLabel;
+    @FXML private Button editButton;
 
+    // --- Formulaire d’ajout ---
+    @FXML private TitledPane addFormPane;
+    @FXML private TextField addTitleField;
+    @FXML private ComboBox<NodeType> addTypeCombo;
+    @FXML private ComboBox<ContentType> addContentTypeCombo;
+    @FXML private Label addContentTypeLabel;
+    @FXML private Label addFormErrorLabel;
+
+    // --- Assistant IA ---
+    @FXML private TitledPane aiPane;
+    @FXML private TextArea aiPromptArea;
+    @FXML private Spinner<Integer> aiWordsSpinner;
+    @FXML private Button aiGenerateButton;
+
+    private final Path saveDirectory = Paths.get("data", "courses");
     private TreeItem<CourseNode> rootNode;
+    private File currentCourseFile;
+    private MainController mainController; // Référence vers MainController
+
+    // Injection du MainController
+    public void setMainController(MainController mainController) { this.mainController = mainController; }
 
     public void initialize() {
-        rootNode = new TreeItem<>(new CourseNode(NodeType.COURS, "Cours"));
+        try {
+            Files.createDirectories(saveDirectory);
+        } catch (IOException e) {
+            showAlert(Alert.AlertType.ERROR, "Erreur de dossier", "Impossible de créer le dossier de sauvegarde : " + e.getMessage());
+            e.printStackTrace();
+        }
+
+        rootNode = new TreeItem<>(new CourseNode(NodeType.COURS, "Nouveau Cours"));
         rootNode.setExpanded(true);
         courseStructureTree.setRoot(rootNode);
 
+        setEditorsVisibility(false, false, false, false);
+        editButton.setDisable(true);
+
+        // Formulaire d’ajout : masqué au départ + spinner IA
+        setAddFormVisible(false);
+        if (addTypeCombo != null) {
+            addTypeCombo.getSelectionModel().selectedItemProperty().addListener((obs, o, n) -> updateContentTypeVisibility());
+        }
+        if (aiWordsSpinner != null) {
+            // bref & clair par défaut
+            aiWordsSpinner.setValueFactory(new SpinnerValueFactory.IntegerSpinnerValueFactory(80, 500, 150, 10));
+        }
+
+        courseStructureTree.getSelectionModel().select(rootNode);
+
         courseStructureTree.getSelectionModel().selectedItemProperty().addListener((obs, oldSel, newSel) -> {
-            if (oldSel != null) {
-                saveNodeContent(oldSel);
-            }
-
+            if (oldSel != null) saveNodeContent(oldSel);
             if (newSel != null) {
-                titleField.setDisable(false);
-                titleField.setText(newSel.getValue().getTitle());
-
-                if (newSel.getValue().getType() == NodeType.NOTION) {
-                    htmlEditor.setDisable(false);
-                    htmlEditor.setHtmlText(newSel.getValue().getContent());
-                } else {
-                    htmlEditor.setDisable(true);
-                    htmlEditor.setHtmlText("");
-                }
+                loadNodeContent(newSel);
+                editButton.setDisable(false);
+                populateAddFormAllowedTypes(); // met à jour les types autorisés pour le formulaire
             } else {
-                titleField.setDisable(true);
-                htmlEditor.setDisable(true);
-                titleField.clear();
-                htmlEditor.setHtmlText("");
+                setEditorsVisibility(false, false, false, false);
+                contentTitleLabel.setText("Sélectionnez un élément...");
+                contentTypeLabel.setText("");
+                editButton.setDisable(true);
             }
         });
 
-        titleField.setDisable(true);
-        htmlEditor.setDisable(true);
-
-        titleField.textProperty().addListener((obs, oldVal, newVal) -> {
-            TreeItem<CourseNode> selected = courseStructureTree.getSelectionModel().getSelectedItem();
-            if (selected != null) {
-                selected.getValue().setTitle(newVal);
-                selected.setValue(selected.getValue()); // rafraîchit l'affichage
-            }
-        });
+        removeResourceButton.setDisable(true);
     }
 
-    private void saveNodeContent(TreeItem<CourseNode> node) {
-        node.getValue().setTitle(titleField.getText());
-        if (node.getValue().getType() == NodeType.NOTION) {
-            node.getValue().setContent(htmlEditor.getHtmlText());
+    public void initData(File courseFile) {
+        this.currentCourseFile = courseFile;
+        if (courseFile == null) handleNewCourse(); else loadCourseFromFile(courseFile);
+    }
+
+    private void loadCourseFromFile(File file) {
+        if (!file.exists()) {
+            showAlert(Alert.AlertType.ERROR, "Fichier non trouvé", "Le fichier de cours n'a pas été trouvé : " + file.getAbsolutePath());
+            handleNewCourse();
+            return;
         }
+        try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(file))) {
+            courseStructure loadedStructure = (courseStructure) ois.readObject();
+            rootNode = buildTreeItem(loadedStructure);
+            rootNode.setExpanded(true);
+            courseStructureTree.setRoot(rootNode);
+            if (!rootNode.getChildren().isEmpty()) courseStructureTree.getSelectionModel().selectFirst();
+            showAlert(Alert.AlertType.INFORMATION, "Chargement réussi", "Le cours a été chargé pour édition.");
+        } catch (IOException | ClassNotFoundException e) {
+            e.printStackTrace();
+            showAlert(Alert.AlertType.ERROR, "Erreur de chargement", "Impossible de charger la structure du cours.");
+            handleNewCourse();
+        }
+    }
+
+    private TreeItem<CourseNode> buildTreeItem(courseStructure structure) {
+        TreeItem<CourseNode> item = new TreeItem<>(structure.getRoot());
+        item.setExpanded(true);
+        for (courseStructure childStructure : structure.getChildren()) {
+            item.getChildren().add(buildTreeItem(childStructure));
+        }
+        return item;
+    }
+
+    private void setEditorsVisibility(boolean showHtml, boolean showLink, boolean showResource, boolean isNotion) {
+        htmlEditor.setVisible(showHtml);
+        htmlEditor.setManaged(showHtml);
+        linkTextField.setVisible(showLink);
+        linkTextField.setManaged(showLink);
+        resourceBox.setVisible(showResource);
+        resourceBox.setManaged(showResource);
+        contentTitleLabel.setText(isNotion ? "Contenu de la Notion" : "Détails de l'élément");
+        contentTypeLabel.setVisible(isNotion);
+
+        // L’assistant IA n’a de sens que pour Notion Texte
+        boolean showAI = isNotion && showHtml;
+        if (aiPane != null) {
+            aiPane.setDisable(!showAI);
+            // ne force pas l’ouverture/fermeture ici ; l’utilisateur garde son choix
+        }
+    }
+
+    private void updateContentDisplay(TreeItem<CourseNode> treeItem) {
+        CourseNode node = treeItem.getValue();
+        ContentType contentType = node.getContentType();
+        contentTypeLabel.setText(contentType != null ? contentType.getDisplayName() : "");
+
+        if (contentType == null) {
+            setEditorsVisibility(false, false, false, node.getType() == NodeType.NOTION);
+            return;
+        }
+
+        switch (contentType) {
+            case TEXT -> {
+                setEditorsVisibility(true, false, false, true);
+                htmlEditor.setHtmlText(Objects.requireNonNullElse(node.getContent(), ""));
+            }
+            case LINK -> {
+                setEditorsVisibility(false, true, false, true);
+                linkTextField.setText(Objects.requireNonNullElse(node.getContent(), ""));
+            }
+            case PDF, VIDEO, AUDIO -> {
+                setEditorsVisibility(false, false, true, true);
+                String filePath = node.getContent();
+                if (filePath != null && !filePath.isEmpty()) {
+                    Path p = Paths.get(filePath);
+                    resourceLabel.setText("Fichier importé : " + p.getFileName());
+                    removeResourceButton.setDisable(false);
+                } else {
+                    resourceLabel.setText("Aucun fichier importé.");
+                    removeResourceButton.setDisable(true);
+                }
+            }
+        }
+    }
+
+    private void saveNodeContent(TreeItem<CourseNode> treeItem) {
+        CourseNode node = treeItem.getValue();
+        if (node.getType() == NodeType.NOTION) {
+            ContentType contentType = node.getContentType();
+            if (contentType != null) {
+                switch (contentType) {
+                    case TEXT -> node.setContent(htmlEditor.getHtmlText());
+                    case LINK -> node.setContent(linkTextField.getText());
+                }
+            }
+        }
+    }
+
+    private void loadNodeContent(TreeItem<CourseNode> newSel) {
+        CourseNode node = newSel.getValue();
+        boolean isNotion = node.getType() == NodeType.NOTION;
+        if (isNotion) updateContentDisplay(newSel);
+        else {
+            setEditorsVisibility(false, false, false, false);
+            contentTitleLabel.setText("Détails de l'élément : " + node.getTitle());
+        }
+    }
+
+    // === Formulaire d’ajout ===========================================================
+
+    private void populateAddFormAllowedTypes() {
+        TreeItem<CourseNode> selected = courseStructureTree.getSelectionModel().getSelectedItem();
+        TreeItem<CourseNode> parent = (selected != null) ? selected : rootNode;
+
+        List<NodeType> allowedChildren = switch (parent.getValue().getType()) {
+            case COURS -> List.of(NodeType.PARTIE, NodeType.NOTION);
+            case PARTIE -> List.of(NodeType.CHAPITRE, NodeType.NOTION);
+            case CHAPITRE -> List.of(NodeType.SECTION, NodeType.NOTION);
+            case SECTION -> List.of(NodeType.NOTION);
+            case NOTION -> List.of();
+        };
+
+        if (addTypeCombo != null) {
+            addTypeCombo.getItems().setAll(allowedChildren);
+            if (!allowedChildren.isEmpty()) addTypeCombo.getSelectionModel().select(allowedChildren.get(0));
+        }
+        updateContentTypeVisibility();
+    }
+
+    private void updateContentTypeVisibility() {
+        if (addTypeCombo == null) return;
+        boolean notion = addTypeCombo.getValue() == NodeType.NOTION;
+        if (addContentTypeCombo != null) {
+            addContentTypeCombo.setVisible(notion);
+            addContentTypeCombo.setManaged(notion);
+            if (notion && addContentTypeCombo.getItems().isEmpty()) {
+                addContentTypeCombo.getItems().setAll(ContentType.values());
+                addContentTypeCombo.getSelectionModel().select(ContentType.TEXT);
+            }
+        }
+        if (addContentTypeLabel != null) {
+            addContentTypeLabel.setVisible(notion);
+            addContentTypeLabel.setManaged(notion);
+        }
+    }
+
+    private void setAddFormVisible(boolean visible) {
+        if (addFormPane != null) {
+            addFormPane.setVisible(visible);
+            addFormPane.setManaged(visible);
+        }
+        if (addFormErrorLabel != null) addFormErrorLabel.setText("");
+        if (visible) populateAddFormAllowedTypes();
     }
 
     @FXML
-    private void handleAddNode() {
-        TreeItem<CourseNode> selected = courseStructureTree.getSelectionModel().getSelectedItem();
-        TreeItem<CourseNode> finalParent = (selected != null) ? selected : rootNode;
-
-        NodeType[] allTypes = NodeType.values();
-        ChoiceDialog<NodeType> dialog = new ChoiceDialog<>(NodeType.PARTIE, allTypes);
-        dialog.setTitle("Ajouter un élément");
-        dialog.setHeaderText("Choisissez le type d'élément à ajouter :");
-        dialog.setContentText("Type :");
-
-        dialog.showAndWait().ifPresent(type -> {
-            if (!isValidChild(finalParent.getValue().getType(), type)) {
-                Alert alert = new Alert(Alert.AlertType.ERROR, "Ce type ne peut pas être ajouté ici.", ButtonType.OK);
-                alert.showAndWait();
-                return;
-            }
-
-            String title = type.name().charAt(0) + type.name().substring(1).toLowerCase() + " " + (finalParent.getChildren().size() + 1);
-            CourseNode nodeData = new CourseNode(type, title);
-            TreeItem<CourseNode> newNode = new TreeItem<>(nodeData);
-            finalParent.getChildren().add(newNode);
-            finalParent.setExpanded(true);
-
-            courseStructureTree.getSelectionModel().select(newNode);
-        });
+    private void handleAddNode() { // toggle du formulaire
+        setAddFormVisible(addFormPane == null || !addFormPane.isVisible());
     }
 
+    @FXML
+    private void handleAddNodeFromForm() {
+        TreeItem<CourseNode> selected = courseStructureTree.getSelectionModel().getSelectedItem();
+        TreeItem<CourseNode> parent = (selected != null) ? selected : rootNode;
 
+        NodeType type = addTypeCombo != null ? addTypeCombo.getValue() : null;
+        String title = (addTitleField != null && addTitleField.getText() != null) ? addTitleField.getText().trim() : "";
 
-    private boolean isValidChild(NodeType parent, NodeType child) {
-        switch (parent) {
-            case COURS: return child == NodeType.PARTIE || child == NodeType.CHAPITRE || child == NodeType.SECTION || child == NodeType.NOTION;
-            case PARTIE: return child == NodeType.CHAPITRE || child == NodeType.SECTION || child == NodeType.NOTION;
-            case CHAPITRE: return child == NodeType.SECTION || child == NodeType.NOTION;
-            case SECTION: return child == NodeType.NOTION;
-            case NOTION: return false;
-            default: return false;
+        if (type == null) {
+            if (addFormErrorLabel != null) addFormErrorLabel.setText("Choisissez un type.");
+            return;
         }
+        if (title.isEmpty()) {
+            if (addFormErrorLabel != null) addFormErrorLabel.setText("Le titre est obligatoire.");
+            return;
+        }
+
+        CourseNode newNode = new CourseNode(type, title);
+        if (type == NodeType.NOTION) {
+            ContentType ct = (addContentTypeCombo != null) ? addContentTypeCombo.getValue() : ContentType.TEXT;
+            if (ct == null) ct = ContentType.TEXT;
+            newNode.setContentType(ct);
+        }
+
+        TreeItem<CourseNode> newItem = new TreeItem<>(newNode);
+        parent.getChildren().add(newItem);
+        parent.setExpanded(true);
+        courseStructureTree.getSelectionModel().select(newItem);
+
+        if (addTitleField != null) addTitleField.clear();
+        setAddFormVisible(false);
+    }
+
+    @FXML
+    private void handleCancelAddForm() { setAddFormVisible(false); }
+
+    // === Assistant IA ================================================================
+
+    @FXML
+    private void handleGenerateWithAI() {
+        TreeItem<CourseNode> selectedItem = courseStructureTree.getSelectionModel().getSelectedItem();
+        if (selectedItem == null) {
+            showAlert(Alert.AlertType.WARNING, "Assistant IA", "Sélectionnez une **Notion (Texte)** pour générer du contenu.");
+            return;
+        }
+        CourseNode node = selectedItem.getValue();
+        if (node.getType() != NodeType.NOTION || node.getContentType() != ContentType.TEXT) {
+            showAlert(Alert.AlertType.WARNING, "Assistant IA", "L’IA ne s’applique qu’aux **Notions** de **type Texte**.");
+            return;
+        }
+
+        // 1) Titre de la Notion
+        String notionTitle = node.getTitle();
+
+        // 2) Contexte = chemin des ancêtres (ex: Cours ▸ Partie ▸ Chapitre ▸ Section)
+        String contextPath = buildContextPath(selectedItem);
+
+        // 3) Consigne & longueur
+        String extra = (aiPromptArea != null && aiPromptArea.getText() != null) ? aiPromptArea.getText().trim() : "";
+        int words = (aiWordsSpinner != null && aiWordsSpinner.getValue() != null) ? aiWordsSpinner.getValue() : 150;
+
+        try {
+            // 4) Appel IA : on passe le sujet ET le contexte
+            String html = LLM.get().generateNotionHtml(
+                    notionTitle + "  |  " + contextPath,               // sujet enrichi du contexte
+                    extra.isBlank() ? ("Contexte: " + contextPath)     // prompt facultatif
+                            : (extra + "\nContexte: " + contextPath),
+                    words
+            );
+
+            htmlEditor.setHtmlText(html);
+            node.setContent(html);
+            showAlert(Alert.AlertType.INFORMATION, "Assistant IA", "Contenu généré et inséré dans l’éditeur.");
+        } catch (Exception e) {
+            e.printStackTrace();
+            showAlert(Alert.AlertType.ERROR, "Assistant IA", "La génération a échoué : " + e.getMessage());
+        }
+    }
+
+    /** Construit le chemin hiérarchique "Cours ▸ Partie ▸ Chapitre ▸ Section" jusqu’à la notion sélectionnée */
+    private String buildContextPath(TreeItem<CourseNode> selectedItem) {
+        StringBuilder ctx = new StringBuilder(selectedItem.getValue().getTitle());
+        TreeItem<CourseNode> cur = selectedItem.getParent();
+        while (cur != null) {
+            ctx.insert(0, cur.getValue().getTitle() + " ▸ ");
+            cur = cur.getParent();
+        }
+        return ctx.toString();
+    }
+
+    // === Reste du contrôleur =========================================================
+
+    @FXML
+    private void handleNewCourse() {
+        rootNode = new TreeItem<>(new CourseNode(NodeType.COURS, "Nouveau Cours"));
+        rootNode.setExpanded(true);
+        courseStructureTree.setRoot(rootNode);
+
+        setEditorsVisibility(false, false, false, false);
+        htmlEditor.setHtmlText("");
+        linkTextField.setText("");
+        resourceLabel.setText("Aucun fichier importé.");
+        editButton.setDisable(true);
+        contentTitleLabel.setText("Nouveau Cours");
+        contentTypeLabel.setText("");
+
+        this.currentCourseFile = null;
+        courseStructureTree.getSelectionModel().select(rootNode);
+        setAddFormVisible(false);
+    }
+
+    @FXML
+    private void handleSaveCourse() {
+        try {
+            Path saveDirectory = Paths.get("data", "courses");
+            if (!Files.exists(saveDirectory)) Files.createDirectories(saveDirectory);
+
+            File saveFile;
+            boolean isNewCourse = (currentCourseFile == null);
+            if (isNewCourse) {
+                String courseTitle = rootNode.getValue().getTitle();
+                String fileName = courseTitle.replaceAll("[^a-zA-Z0-9.-]", "_") + ".crs";
+                saveFile = saveDirectory.resolve(fileName).toFile();
+            } else saveFile = currentCourseFile;
+
+            courseStructure saveStructure = buildCourseStructure(rootNode);
+            try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(saveFile))) {
+                oos.writeObject(saveStructure);
+            }
+
+            showAlert(Alert.AlertType.INFORMATION, "Sauvegarde réussie", "Le cours a été sauvegardé : " + saveFile.getAbsolutePath());
+            if (mainController != null) mainController.refreshMyCourses();
+            handleNewCourse();
+        } catch (IOException e) {
+            e.printStackTrace();
+            showAlert(Alert.AlertType.ERROR, "Erreur de sauvegarde", "Une erreur est survenue : " + e.getMessage());
+        }
+    }
+
+    private courseStructure buildCourseStructure(TreeItem<CourseNode> treeItem) {
+        courseStructure structure = new courseStructure(treeItem.getValue());
+        for (TreeItem<CourseNode> child : treeItem.getChildren()) structure.addChild(buildCourseStructure(child));
+        return structure;
     }
 
     @FXML
@@ -115,77 +410,77 @@ public class CourseEditorController {
             TreeItem<CourseNode> parent = selected.getParent();
             parent.getChildren().remove(selected);
         } else {
-            Alert alert = new Alert(Alert.AlertType.WARNING, "Vous ne pouvez pas supprimer le nœud racine 'Cours'.", ButtonType.OK);
-            alert.showAndWait();
+            showAlert(Alert.AlertType.WARNING, "Suppression impossible", "Vous ne pouvez pas supprimer le nœud racine 'Cours'.");
         }
     }
 
     @FXML
-    private void handleImportResource() {
-        List<String> choices = List.of("PDF", "Vidéo", "Lien externe");
-
-        ChoiceDialog<String> dialog = new ChoiceDialog<>("PDF", choices);
-        dialog.setTitle("Importer une ressource");
-        dialog.setHeaderText("Choisissez le type de ressource à importer :");
-
-        dialog.showAndWait().ifPresent(choice -> {
-            switch (choice) {
-                case "PDF" -> importPdf();
-                case "Vidéo" -> importVideo();
-                case "Lien externe" -> importLink();
-            }
-        });
-    }
-
-    private void importPdf() {
-        FileChooser fileChooser = new FileChooser();
-        fileChooser.setTitle("Choisir un fichier PDF");
-        fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Fichiers PDF", "*.pdf"));
-
-        File selectedFile = fileChooser.showOpenDialog(courseStructureTree.getScene().getWindow());
-
-        if (selectedFile != null) {
-            showAlert("PDF importé", "Fichier sélectionné : " + selectedFile.getName());
-            // Tu peux aussi sauvegarder le chemin du fichier dans la notion sélectionnée si nécessaire
+    private void handleEditNode() {
+        TreeItem<CourseNode> selectedItem = courseStructureTree.getSelectionModel().getSelectedItem();
+        if (selectedItem == null) {
+            showAlert(Alert.AlertType.INFORMATION, "Non modifiable", "Veuillez sélectionner un élément à modifier.");
+            return;
         }
-    }
-    private void importVideo() {
-        FileChooser fileChooser = new FileChooser();
-        fileChooser.setTitle("Choisir une vidéo");
-        fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Fichiers vidéo", "*.mp4", "*.avi", "*.mov"));
-
-        File selectedFile = fileChooser.showOpenDialog(courseStructureTree.getScene().getWindow());
-
-        if (selectedFile != null) {
-            showAlert("Vidéo importée", "Vidéo sélectionnée : " + selectedFile.getName());
-        }
-    }
-    private void importLink() {
-        TextInputDialog dialog = new TextInputDialog("https://");
-        dialog.setTitle("Importer un lien");
-        dialog.setHeaderText("Entrez l'URL de la ressource externe :");
-
-        dialog.showAndWait().ifPresent(link -> {
-            if (link.startsWith("http://") || link.startsWith("https://")) {
-                showAlert("Lien importé", "Lien : " + link);
+        CourseNode node = selectedItem.getValue();
+        TextInputDialog dialog = new TextInputDialog(node.getTitle());
+        dialog.setTitle("Modifier le titre");
+        dialog.setHeaderText("Entrez le nouveau titre :");
+        dialog.setContentText("Nouveau titre :");
+        dialog.showAndWait().ifPresent(newTitle -> {
+            if (!newTitle.trim().isEmpty()) {
+                node.setTitle(newTitle.trim());
+                treeItem_forceRefresh(selectedItem);
             } else {
-                showAlert("Lien invalide", "Le lien doit commencer par http:// ou https://");
+                showAlert(Alert.AlertType.WARNING, "Titre invalide", "Le titre ne peut pas être vide.");
             }
         });
     }
 
-    private void showAlert(String title, String message) {
-        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+    @FXML
+    private void handleImportResource() {
+        TreeItem<CourseNode> selectedItem = courseStructureTree.getSelectionModel().getSelectedItem();
+        if (selectedItem == null || selectedItem.getValue().getType() != NodeType.NOTION) return;
+
+        ContentType contentType = selectedItem.getValue().getContentType();
+        if (contentType == null || contentType.equals(ContentType.TEXT) || contentType.equals(ContentType.LINK)) {
+            showAlert(Alert.AlertType.WARNING, "Action impossible", "Cette notion n'est pas de type fichier.");
+            return;
+        }
+
+        FileChooser fileChooser = new FileChooser();
+        fileChooser.setTitle("Importer une ressource");
+        fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter(contentType.getDisplayName() + " Files", contentType.getExtensions()));
+        File file = fileChooser.showOpenDialog(null);
+        if (file != null) {
+            selectedItem.getValue().setContent(file.getAbsolutePath());
+            resourceLabel.setText("Fichier importé : " + file.getName());
+            removeResourceButton.setDisable(false);
+            showAlert(Alert.AlertType.INFORMATION, "Fichier importé", "Chemin : " + file.getAbsolutePath());
+        }
+    }
+
+    @FXML
+    private void handleRemoveResource() {
+        TreeItem<CourseNode> selectedItem = courseStructureTree.getSelectionModel().getSelectedItem();
+        if (selectedItem != null && selectedItem.getValue().getType() == NodeType.NOTION) {
+            selectedItem.getValue().setContent(null);
+            resourceLabel.setText("Aucun fichier importé.");
+            removeResourceButton.setDisable(true);
+            showAlert(Alert.AlertType.INFORMATION, "Ressource supprimée", "La ressource a été retirée de cette notion.");
+        }
+    }
+
+    private void showAlert(Alert.AlertType type, String title, String message) {
+        Alert alert = new Alert(type);
         alert.setTitle(title);
         alert.setHeaderText(null);
         alert.setContentText(message);
         alert.showAndWait();
     }
 
-
-
-    @FXML private void handleSaveCourse() {
-        Alert alert = new Alert(Alert.AlertType.INFORMATION, "Fonction de sauvegarde à venir.", ButtonType.OK);
-        alert.showAndWait();
+    private void treeItem_forceRefresh(TreeItem<CourseNode> item) {
+        CourseNode node = item.getValue();
+        item.setValue(null);
+        item.setValue(node);
     }
 }

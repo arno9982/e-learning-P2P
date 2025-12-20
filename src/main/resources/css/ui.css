@@ -1,0 +1,155 @@
+/* ======== Palette ======== */
+* {
+  -color-bg: #f5f8ff;
+  -color-bg-2: #eef3ff;
+  -color-stroke: #cfd9f6;
+  -color-primary: #2f5ae3;
+  -color-primary-700: #274ed1;
+  -color-danger: #e74c3c;
+  -color-danger-700: #d64233;
+  -color-text: #2f3b57;
+}
+
+/* ======== Header compact bleu ======== */
+.app-header {
+  -fx-padding: 6 12;
+  -fx-background-color: linear-gradient(to bottom, #f7faff, #eaf1ff);
+  -fx-border-color: -color-stroke;
+  -fx-border-width: 0 0 1 0;
+}
+.app-header .label {
+  -fx-font-size: 20px;
+  -fx-font-weight: 700;
+  -fx-text-fill: -color-text;
+}
+
+/* ======== TabPane : onglet actif lisible (plus de texte blanc) ======== */
+.tab-pane .tab-header-area .tab-header-background {
+  -fx-background-color: linear-gradient(to bottom, -color-bg-2, #e3ebff);
+  -fx-border-color: -color-stroke;
+  -fx-border-width: 0 0 1 0;
+}
+.tab-pane .tab {
+  -fx-background-radius: 8 8 0 0;
+  -fx-background-color: transparent;
+}
+.tab-pane .tab .tab-label {
+  -fx-text-fill: -color-text;
+  -fx-font-weight: 600;
+}
+.tab-pane .tab:selected {
+  -fx-background-color: white;
+}
+.tab-pane .tab:selected .tab-label {
+  -fx-text-fill: -color-primary;
+}
+
+/* ======== TextField / MenuButton look léger ======== */
+.text-field, .combo-box, .menu-button {
+  -fx-background-color: white;
+  -fx-background-radius: 8;
+  -fx-border-color: -color-stroke;
+  -fx-border-radius: 8;
+  -fx-padding: 6 10;
+}
+.text-field:focused {
+  -fx-border-color: -color-primary;
+}
+
+/* ======== TableView : plus compact et clair ======== */
+.table-view {
+  -fx-background-color: transparent;
+}
+.table-view .column-header, .table-view .filler {
+  -fx-background-color: linear-gradient(to bottom, -color-bg-2, #e3ebff);
+  -fx-border-color: -color-stroke;
+  -fx-border-width: 0 0 1 0;
+}
+.table-view .column-header .label {
+  -fx-text-fill: -color-text;
+  -fx-font-weight: 700;
+}
+.table-row-cell {
+  -fx-cell-size: 44px;              /* ← réduit la hauteur des lignes */
+  -fx-background-insets: 0;
+}
+.table-row-cell:odd {
+  -fx-background-color: #fafcff;
+}
+.table-row-cell:even {
+  -fx-background-color: #ffffff;
+}
+.table-cell {
+  -fx-padding: 6 10;
+  -fx-wrap-text: false;
+}
+
+/* ======== Boutons de la colonne "Options" ======== */
+.button {
+  -fx-background-radius: 10;
+  -fx-padding: 4 12;
+  -fx-font-weight: 600;
+}
+
+.button.primary {
+  -fx-background-color: -color-primary;
+  -fx-text-fill: white;
+}
+.button.primary:hover {
+  -fx-background-color: -color-primary-700;
+}
+
+.button.ghost {
+  -fx-background-color: #f3f6ff;
+  -fx-text-fill: -color-primary-700;
+  -fx-border-color: #dce6ff;
+  -fx-border-width: 1;
+}
+.button.ghost:hover {
+  -fx-background-color: #e8efff;
+}
+
+/* Supprimer TOUJOURS rouge */
+.button.danger {
+  -fx-background-color: -color-danger;
+  -fx-text-fill: white;
+  -fx-font-weight: 700;
+}
+.button.danger:hover {
+  -fx-background-color: -color-danger-700;
+}
+
+/* Espacement horizontal propre si un HBox d’actions a une classe (optionnel) */
+.table-actions {
+  -fx-spacing: 10;
+  -fx-alignment: CENTER_LEFT;
+}
+
+/* ======== WebView & zone centrale ======== */
+.web-view, .web-view .scroll-pane, .web-view .viewport {
+  -fx-background-color: white;
+}
+
+/* ======== TitledPane (éditeur & IA) ======== */
+.titled-pane > .title {
+  -fx-background-color: linear-gradient(to bottom, -color-bg-2, #e3ebff);
+  -fx-border-color: -color-stroke;
+  -fx-border-width: 0 0 1 0;
+}
+.titled-pane > .title .text {
+  -fx-fill: -color-text;
+  -fx-font-weight: 700;
+}
+.titled-pane > *.content {
+  -fx-background-color: white;
+}
+
+/* ======== Slider / Controls mineurs ======== */
+.slider .track {
+  -fx-background-color: #e2e8ff;
+  -fx-background-radius: 4;
+}
+.slider .thumb {
+  -fx-background-color: -color-primary;
+  -fx-background-radius: 10;
+}

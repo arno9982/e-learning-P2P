@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.image.Image?>
+<?import javafx.scene.image.ImageView?>
+<?import javafx.scene.layout.*?>
+
+<VBox xmlns="http://javafx.com/javafx/21.0.1" xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="org.example.controller.MainController">
+
+    <children>
+        <!-- Barre d'entête -->
+        <HBox alignment="CENTER_LEFT" spacing="10.0" styleClass="app-header">
+            <Label styleClass="header-title brand" text="EduConnect" />
+            <Region HBox.hgrow="ALWAYS" />
+
+            <MenuButton text="Paramètres" styleClass="settings">
+                <graphic>
+                    <ImageView fitHeight="20" fitWidth="20">
+                        <image>
+                            <Image url="@/images/settings.jpg" />
+                        </image>
+                    </ImageView>
+                </graphic>
+                <items>
+                    <CustomMenuItem hideOnClick="false">
+                        <content>
+                            <HBox alignment="CENTER_LEFT" spacing="5">
+                                <Label text="Pseudo :" />
+                                <TextField fx:id="pseudoField" promptText="Entrez votre pseudo" />
+                            </HBox>
+                        </content>
+                    </CustomMenuItem>
+                    <SeparatorMenuItem />
+                    <CheckMenuItem fx:id="teacherModeCheck" text="Mode Enseignant" />
+                    <CheckMenuItem fx:id="p2pVisibilityCheck" text="Visibilité P2P" />
+                </items>
+            </MenuButton>
+        </HBox>
+
+        <!-- Onglets -->
+        <TabPane fx:id="mainTabPane" VBox.vgrow="ALWAYS" tabClosingPolicy="UNAVAILABLE" styleClass="main-tabs">
+            <tabs>
+                <Tab fx:id="myCoursesTab" text="Mes cours">
+                    <content>
+                        <fx:include source="myCourses.fxml" />
+                    </content>
+                </Tab>
+
+                <Tab fx:id="courseEditorTab" text="Éditeur de cours" disable="true">
+                    <content>
+                        <fx:include source="courseEditor.fxml" />
+                    </content>
+                </Tab>
+
+                <Tab fx:id="courseConsultationTab" text="Consultation">
+                    <content>
+                        <fx:include source="courseConsultation.fxml" />
+                    </content>
+                </Tab>
+
+                <Tab text="Recherche des cours">
+                    <content>
+                        <AnchorPane>
+                            <VBox AnchorPane.topAnchor="0" AnchorPane.rightAnchor="0"
+                                  AnchorPane.bottomAnchor="0" AnchorPane.leftAnchor="0"
+                                  spacing="8" styleClass="screen">
+                                <HBox spacing="10" alignment="CENTER_LEFT" styleClass="toolbar">
+                                    <Label text="Rechercher :" />
+                                    <TextField fx:id="p2pSearchField"
+                                               promptText="Entrer le titre du cours ou l'auteur..."
+                                               HBox.hgrow="ALWAYS" />
+                                </HBox>
+
+                                <TableView fx:id="p2pCourseTable" VBox.vgrow="ALWAYS"
+                                           styleClass="card table-compact">
+                                    <columns>
+                                        <TableColumn fx:id="p2pCourseTitleColumn"
+                                                     text="Titre du cours" prefWidth="300.0" />
+                                        <TableColumn fx:id="p2pCourseAuthorColumn"
+                                                     text="Auteur" prefWidth="200.0" />
+                                    </columns>
+                                </TableView>
+                            </VBox>
+                        </AnchorPane>
+                    </content>
+                </Tab>
+            </tabs>
+        </TabPane>
+    </children>
+</VBox>

@@ -1,0 +1,40 @@
+name: Build Multi-Platform
+on: 
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Build with Maven (Create Fat JAR)
+        run: mvn clean package -DskipTests
+
+      - name: Create Executable Package
+        run: |
+          jpackage --name "E-Learning-P2P" \
+          --input target/ \
+          --main-jar demo2-1.0-SNAPSHOT.jar \
+          --main-class org.example.Main \
+          --dest output/ \
+          --vendor "MonProjet"
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Executable-${{ matrix.os }}
+          path: output/

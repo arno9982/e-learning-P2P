@@ -11,13 +11,25 @@ public class Main extends Application {
     @Override
     public void start(Stage primaryStage) {
         try {
-            Parent root = FXMLLoader.load(getClass().getResource("/login.fxml"));
-            primaryStage.setTitle("Connexion à la plateforme");
-            primaryStage.setScene(new Scene(root, 600, 300));
+            FXMLLoader loader = new FXMLLoader(getClass().getResource("/fxml/main.fxml"));
+            Parent root = loader.load();
+
+            Scene scene = new Scene(root);
+            scene.getStylesheets().clear();
+            scene.getStylesheets().add(getClass().getResource("/css/ui.css").toExternalForm());
+
+            primaryStage.setTitle("EduConnect");
+            primaryStage.setScene(scene);
             primaryStage.show();
         } catch (Exception e) {
+            System.err.println("Erreur au démarrage de l'application.");
             e.printStackTrace();
         }
+    }
+
+    @Override
+    public void stop() throws Exception {
+        super.stop();
     }
 
     public static void main(String[] args) {
