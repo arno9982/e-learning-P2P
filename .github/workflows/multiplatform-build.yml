@@ -30,13 +30,12 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
 
-      - name: Build with Maven (Create Fat JAR)
+      - name: Build with Maven
         run: mvn clean package -DskipTests
 
       - name: Setup JavaFX Modules
         shell: bash
         run: |
-          # Utilisation de curl pour la compatibilité Windows/Linux
           curl -L -o javafx-jmods.zip https://download2.gluonhq.com/openjfx/17.0.8/openjfx-17.0.8_${{ matrix.platform }}-x64_bin-jmods.zip
           unzip javafx-jmods.zip
 
@@ -51,6 +50,7 @@ jobs:
                    --vendor "MonProjet" \
                    --module-path javafx-jmods-17.0.8/ \
                    --add-modules javafx.controls,javafx.fxml,javafx.graphics,javafx.web,javafx.media \
+                   --win-shortcut --win-menu --win-dir-chooser \
                    --type ${{ matrix.os == 'windows-latest' && 'exe' || (matrix.os == 'macos-latest' && 'dmg' || 'deb') }}
 
       - name: Upload Artifacts

@@ -1,24 +1,32 @@
 package org.example.service;
 
-import com.google.gson.reflect.TypeToken;
-import org.example.util.Json;
-
 import java.io.IOException;
 import java.lang.reflect.Type;
-import java.nio.file.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.Set;
 
+import org.example.util.Json;
+
+import com.google.gson.reflect.TypeToken;
+
 /** Mémorise quels cours viennent du téléchargement (donc non éditables) */
 public class DownloadedCoursesRegistry {
-    private static final Path REG_PATH = CourseRepository.COURSES_DIR.resolve("downloaded.json");
+    
+    // CORRECTION : On utilise CourseRepository.getCoursesDir() au lieu de la constante fixe
+    private static Path getRegistryPath() {
+        return CourseRepository.getCoursesDir().resolve("downloaded.json");
+    }
+
     private static final Type TYPE = new TypeToken<Set<String>>(){}.getType();
     private static Set<String> ids = load();
 
     private static Set<String> load() {
         try {
-            if (Files.exists(REG_PATH)) {
-                String s = Files.readString(REG_PATH);
+            Path regPath = getRegistryPath();
+            if (Files.exists(regPath)) {
+                String s = Files.readString(regPath);
                 Set<String> set = Json.decode(s, TYPE);
                 return (set != null) ? set : new HashSet<>();
             }
@@ -28,8 +36,9 @@ public class DownloadedCoursesRegistry {
 
     private static void save() {
         try {
-            Files.createDirectories(REG_PATH.getParent());
-            Files.writeString(REG_PATH, Json.encode(ids));
+            Path regPath = getRegistryPath();
+            Files.createDirectories(regPath.getParent());
+            Files.writeString(regPath, Json.encode(ids));
         } catch (IOException ignored) {}
     }
 
@@ -43,4 +52,3 @@ public class DownloadedCoursesRegistry {
         return remoteCourseId != null && ids.contains(remoteCourseId);
     }
 }
-
