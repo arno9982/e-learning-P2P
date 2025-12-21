@@ -1,26 +1,34 @@
 package org.example.ai;
 
 import org.example.util.Json;
-
+import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.HashMap;
 import java.util.Map;
 
-/** Config IA : lit d'abord les variables d'environnement, puis (optionnel) data/config.json */
+/** Config IA : corrigée pour utiliser le dossier AppData autorisé */
 public final class AIConfig {
-    private static final Path CONF_DIR  = Paths.get("data");
-    private static final Path CONF_FILE = CONF_DIR.resolve("config.json");
+    
+    // CORRECTION : On utilise une méthode pour obtenir le chemin dynamique défini dans Main
+    private static Path getConfDir() {
+        String basePath = System.getProperty("app.base.path", System.getProperty("user.home"));
+        return Paths.get(basePath, "data");
+    }
 
-    private static volatile String provider = "GROQ"; // GROQ ou OPENAI
+    private static Path getConfFile() {
+        return getConfDir().resolve("config.json");
+    }
+
+    private static volatile String provider = "GROQ"; 
     private static volatile String apiKey;
     private static volatile boolean bootstrapped = false;
 
-    /** Charge depuis data/config.json si présent (optionnel) */
     public static synchronized void load() {
-        if (Files.exists(CONF_FILE)) {
+        Path confFile = getConfFile();
+        if (Files.exists(confFile)) {
             try {
-                String json = Files.readString(CONF_FILE, StandardCharsets.UTF_8);
+                String json = Files.readString(confFile, StandardCharsets.UTF_8);
                 Map<?,?> m = Json.decode(json, Map.class);
                 if (m != null) {
                     Object p = m.get("ai_provider");
@@ -32,12 +40,11 @@ public final class AIConfig {
         }
     }
 
-    /** Injection silencieuse depuis l'environnement (prioritaire, non persisté) */
     public static synchronized void bootstrapFromEnv() {
         if (bootstrapped) return;
         bootstrapped = true;
 
-        String p = System.getenv("AI_PROVIDER");  // "GROQ" ou "OPENAI"
+        String p = System.getenv("AI_PROVIDER");
         if (p != null && !p.isBlank()) provider = p.trim().toUpperCase();
 
         String envKey = System.getenv("GROQ_API_KEY");
@@ -45,14 +52,16 @@ public final class AIConfig {
         if (envKey != null && !envKey.isBlank()) apiKey = envKey.trim();
     }
 
-    /** (Optionnel) persistance sur disque si tu veux garder une conf locale */
     public static synchronized void save() {
         try {
-            if (!Files.exists(CONF_DIR)) Files.createDirectories(CONF_DIR);
+            Path confDir = getConfDir();
+            if (!Files.exists(confDir)) Files.createDirectories(confDir);
+            
             Map<String,Object> m = new HashMap<>();
             m.put("ai_provider", provider);
             m.put("ai_api_key", apiKey == null ? "" : apiKey);
-            Files.writeString(CONF_FILE, Json.encode(m), StandardCharsets.UTF_8,
+            
+            Files.writeString(getConfFile(), Json.encode(m), StandardCharsets.UTF_8,
                     StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
         } catch (Exception ignored) {}
     }

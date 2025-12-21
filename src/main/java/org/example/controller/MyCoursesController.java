@@ -36,33 +36,37 @@ public class MyCoursesController {
     @FXML private Button importCourseButton;
 
     private MainController mainController;
-    private final Path saveDirectory = Paths.get("data", "courses");
+    
+    // CORRECTION : Le chemin est maintenant calculé dynamiquement
+    private Path saveDirectory;
 
     private final ObservableList<CourseListDisplay> masterCourses = FXCollections.observableArrayList();
     private FilteredList<CourseListDisplay> filteredCourses;
-    private boolean isTeacher = true; // Variable de test, à connecter à votre logique d'authentification.
+    private boolean isTeacher = true; 
 
     public void setMainController(MainController mainController) {
         this.mainController = mainController;
     }
 
-    // Méthode pour définir le mode d'accès de l'utilisateur (à appeler depuis MainController)
     public void setTeacherMode(boolean isTeacher) {
         this.isTeacher = isTeacher;
-        // La visibilité du bouton d'importation dépend du mode enseignant
-        if (importCourseButton != null) {
-            importCourseButton.setVisible(isTeacher);
-        }
-        refreshCourses(); // Rafraîchir l'affichage pour appliquer les changements
+        if (importCourseButton != null) importCourseButton.setVisible(isTeacher);
+        if (newCourseButton != null) newCourseButton.setVisible(isTeacher);
+        refreshCourses(); 
     }
 
     @FXML
     public void initialize() {
+        // CORRECTION : Utilisation du chemin AppData pour éviter l'erreur de permissions
+        String basePath = System.getProperty("app.base.path", System.getProperty("user.home"));
+        this.saveDirectory = Paths.get(basePath, "courses");
+
         try {
-            Files.createDirectories(saveDirectory);
+            if (!Files.exists(saveDirectory)) {
+                Files.createDirectories(saveDirectory);
+            }
         } catch (IOException e) {
-            showAlert(Alert.AlertType.ERROR, "Erreur de dossier", "Impossible de créer le dossier de sauvegarde : " + e.getMessage());
-            e.printStackTrace();
+            showAlert(Alert.AlertType.ERROR, "Erreur système", "Impossible de créer le dossier de stockage : " + e.getMessage());
         }
 
         courseNameColumn.setCellValueFactory(new PropertyValueFactory<>("title"));
@@ -72,7 +76,8 @@ public class MyCoursesController {
             private final Button editButton = styledBtn("Éditer", "ghost");
             private final Button deleteButton = styledBtn("Supprimer", "danger");
             private final Button exportButton = styledBtn("Exporter", "ghost");
-            private final Button visibilityButton = styledBtn("Rendre visible", "ghost");
+            private final Button visibilityButton = styledBtn("Visibilité", "ghost");
+            private final HBox pane = new HBox(5);
 
             {
                 consultButton.setPrefWidth(90);
@@ -80,12 +85,6 @@ public class MyCoursesController {
                 deleteButton.setPrefWidth(90);
                 exportButton.setPrefWidth(80);
                 visibilityButton.setPrefWidth(120);
-            }
-
-            private final HBox pane = new HBox(5);
-
-            {
-                pane.getStyleClass().add("table-actions");
                 pane.setAlignment(Pos.CENTER_LEFT);
 
                 consultButton.setOnAction(event -> {
@@ -119,103 +118,74 @@ public class MyCoursesController {
                 super.updateItem(item, empty);
                 if (empty) {
                     setGraphic(null);
-                    return;
+                } else {
+                    CourseListDisplay course = getTableView().getItems().get(getIndex());
+                    visibilityButton.setText(course.isVisible() ? "Masquer" : "Rendre visible");
+                    
+                    // Un cours téléchargé (P2P) ne peut pas être édité localement
+                    boolean isDownloaded = isDownloadedCourse(course);
+                    editButton.setDisable(isDownloaded);
+
+                    pane.getChildren().clear();
+                    pane.getChildren().add(consultButton);
+
+                    if (isTeacher) {
+                        pane.getChildren().addAll(editButton, deleteButton, exportButton, visibilityButton);
+                    }
+                    setGraphic(pane);
                 }
-                CourseListDisplay course = getTableView().getItems().get(getIndex());
-                visibilityButton.setText(course.isVisible() ? "Masquer" : "Rendre visible");
-                boolean isDownloaded = isDownloadedCourse(course);
-                editButton.setDisable(isDownloaded);
-
-                // Re-création dynamique de la HBox en fonction du mode utilisateur
-                pane.getChildren().clear();
-                pane.getChildren().add(consultButton); // Le bouton "Consulter" est toujours visible
-
-                if (isTeacher) {
-                    pane.getChildren().addAll(editButton, deleteButton, exportButton, visibilityButton);
-                }
-
-                setGraphic(pane);
             }
         });
 
-        courseTableView.setPlaceholder(new Label("Aucun cours à afficher"));
+        // Configuration de la recherche et du filtrage
         filteredCourses = new FilteredList<>(masterCourses, c -> true);
         SortedList<CourseListDisplay> sorted = new SortedList<>(filteredCourses);
         sorted.comparatorProperty().bind(courseTableView.comparatorProperty());
         courseTableView.setItems(sorted);
-
-        courseTableView.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
-        courseNameColumn.setMaxWidth(1f * Integer.MAX_VALUE * 0.40);
-        optionsColumn.setMaxWidth(1f * Integer.MAX_VALUE * 0.60);
-        courseNameColumn.setStyle("-fx-alignment: CENTER-LEFT;");
-        optionsColumn.setStyle("-fx-alignment: CENTER;");
 
         if (searchField != null) {
             searchField.textProperty().addListener((obs, oldVal, newVal) -> {
                 final String q = normalize(newVal);
                 filteredCourses.setPredicate(c -> {
                     if (q == null || q.isBlank()) return true;
-                    String title = normalize(c.getTitle());
-                    String file = normalize(c.getFilePath());
-                    return (title != null && title.contains(q)) || (file != null && file.contains(q));
+                    return normalize(c.getTitle()).contains(q);
                 });
             });
-        }
-
-        // Gérer le clic sur le nouveau bouton d'importation.
-        if (importCourseButton != null) {
-            importCourseButton.setOnAction(event -> handleImportCourse());
         }
 
         refreshCourses();
     }
 
-    @FXML
-    private void handleNewCourse() {
-        if (mainController != null) {
-            mainController.showCourseEditor(null);
-        }
-    }
-
     public void refreshCourses() {
         List<CourseListDisplay> tmp = new ArrayList<>();
-
         try {
             if (Files.exists(saveDirectory)) {
                 Files.list(saveDirectory)
                         .filter(path -> path.toString().endsWith(".crs"))
-                        .sorted()
                         .forEach(path -> {
                             try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(path.toFile()))) {
-                                courseStructure loadedStructure = (courseStructure) ois.readObject();
-                                String courseId = path.getFileName().toString().replace(".crs", "");
-                                tmp.add(new CourseListDisplay(
-                                        courseId,
-                                        loadedStructure.getRoot().getTitle(),
-                                        path.toString(),
-                                        false
-                                ));
-                            } catch (IOException | ClassNotFoundException e) {
-                                System.err.println("Erreur lors du chargement du fichier de cours : " + path);
-                                e.printStackTrace();
+                                courseStructure loaded = (courseStructure) ois.readObject();
+                                String id = path.getFileName().toString().replace(".crs", "");
+                                tmp.add(new CourseListDisplay(id, loaded.getRoot().getTitle(), path.toString(), false));
+                            } catch (Exception e) {
+                                System.err.println("Fichier corrompu ignoré : " + path);
                             }
                         });
             }
         } catch (IOException e) {
             e.printStackTrace();
-            showAlert(Alert.AlertType.ERROR, "Erreur de lecture", "Impossible de lire les cours du dossier.");
         }
-
         masterCourses.setAll(tmp);
     }
 
+    @FXML
     private void handleImportCourse() {
         FileChooser fileChooser = new FileChooser();
-        fileChooser.setTitle("Sélectionner un cours à importer");
+        fileChooser.setTitle("Importer un cours");
         fileChooser.getExtensionFilters().addAll(
-                new FileChooser.ExtensionFilter("Fichiers de cours (*.crs, *.zip)", "*.crs", "*.zip"),
-                new FileChooser.ExtensionFilter("Fichiers SCORM (*.zip)", "*.zip"),
-                new FileChooser.ExtensionFilter("Fichiers de plateforme (*.crs)", "*.crs")
+                new FileChooser.ExtensionFilter("Tous les formats", "*.crs", "*.zip"),
+                new FileChooser.ExtensionFilter("SCORM (.zip)", "*.zip"),
+                new FileChooser.ExtensionFilter("Plateforme (.crs)", "*.crs")
         );
 
         File file = fileChooser.showOpenDialog(null);
@@ -223,78 +193,53 @@ public class MyCoursesController {
             try {
                 if (file.getName().toLowerCase().endsWith(".zip")) {
                     ScormImporter.importScorm(file.toPath(), saveDirectory);
-                    showAlert(Alert.AlertType.INFORMATION, "Importation SCORM réussie", "Le cours SCORM a été importé avec succès.");
-                } else if (file.getName().toLowerCase().endsWith(".crs")) {
-                    Path destinationPath = saveDirectory.resolve(file.getName());
-                    Files.copy(file.toPath(), destinationPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                    showAlert(Alert.AlertType.INFORMATION, "Importation réussie", "Le cours a été importé avec succès.");
+                } else {
+                    Path dest = saveDirectory.resolve(file.getName());
+                    Files.copy(file.toPath(), dest, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
                 }
+                refreshCourses();
+                showAlert(Alert.AlertType.INFORMATION, "Succès", "Importation terminée.");
             } catch (IOException e) {
-                e.printStackTrace();
-                showAlert(Alert.AlertType.ERROR, "Erreur d'importation", "Une erreur est survenue lors de l'importation du cours : " + e.getMessage());
+                showAlert(Alert.AlertType.ERROR, "Erreur", "Importation échouée : " + e.getMessage());
             }
-            refreshCourses();
         }
     }
 
     private void handleExportCourse(CourseListDisplay course) {
-        if (course == null) {
-            showAlert(Alert.AlertType.WARNING, "Sélection requise", "Veuillez sélectionner un cours à exporter.");
-            return;
-        }
         FileChooser fileChooser = new FileChooser();
         fileChooser.setTitle("Exporter le cours");
-        String defaultFileName = new File(course.getFilePath()).getName().replace(".crs", "");
+        fileChooser.setInitialFileName(course.getTitle());
+        fileChooser.getExtensionFilters().addAll(
+                new FileChooser.ExtensionFilter("Fichier plateforme (.crs)", "*.crs"),
+                new FileChooser.ExtensionFilter("Package SCORM (.zip)", "*.zip")
+        );
 
-        FileChooser.ExtensionFilter crsFilter = new FileChooser.ExtensionFilter("Fichier de plateforme (*.crs)", "*.crs");
-        FileChooser.ExtensionFilter scormFilter = new FileChooser.ExtensionFilter("Fichier SCORM (*.zip)", "*.zip");
-        fileChooser.getExtensionFilters().addAll(crsFilter, scormFilter);
-        fileChooser.setInitialFileName(defaultFileName + ".crs");
-
-        File fileToExportTo = fileChooser.showSaveDialog(null);
-
-        if (fileToExportTo != null) {
-            Path sourcePath = Paths.get(course.getFilePath());
-            Path destinationPath = fileToExportTo.toPath();
-
+        File targetFile = fileChooser.showSaveDialog(null);
+        if (targetFile != null) {
             try {
-                if (fileToExportTo.getName().toLowerCase().endsWith(".zip")) {
-                    ScormExporter.exportToScorm(sourcePath, destinationPath);
-                    showAlert(Alert.AlertType.INFORMATION, "Exportation SCORM réussie", "Le cours a été exporté au format SCORM : " + destinationPath);
+                Path source = Paths.get(course.getFilePath());
+                if (targetFile.getName().endsWith(".zip")) {
+                    ScormExporter.exportToScorm(source, targetFile.toPath());
                 } else {
-                    Files.copy(sourcePath, destinationPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                    showAlert(Alert.AlertType.INFORMATION, "Exportation réussie", "Le cours a été exporté avec succès à : " + destinationPath);
+                    Files.copy(source, targetFile.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
                 }
+                showAlert(Alert.AlertType.INFORMATION, "Succès", "Exportation réussie.");
             } catch (IOException e) {
-                e.printStackTrace();
-                showAlert(Alert.AlertType.ERROR, "Erreur d'exportation", "Une erreur est survenue lors de l'exportation du cours : " + e.getMessage());
+                showAlert(Alert.AlertType.ERROR, "Erreur", "Exportation échouée.");
             }
         }
     }
 
+    @FXML
     private void handleDeleteCourse(CourseListDisplay course) {
-        if (course == null) {
-            showAlert(Alert.AlertType.WARNING, "Sélection requise", "Veuillez sélectionner un cours à supprimer.");
-            return;
-        }
-
-        Alert confirmationAlert = new Alert(Alert.AlertType.CONFIRMATION);
-        confirmationAlert.setTitle("Confirmation de suppression");
-        confirmationAlert.setHeaderText("Supprimer le cours : " + course.getTitle());
-        confirmationAlert.setContentText("Êtes-vous sûr de vouloir supprimer ce cours ? Cette action est irréversible.");
-
-        Optional<ButtonType> result = confirmationAlert.showAndWait();
-
-        if (result.isPresent() && result.get() == ButtonType.OK) {
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION, "Supprimer définitivement " + course.getTitle() + " ?", ButtonType.YES, ButtonType.NO);
+        if (alert.showAndWait().orElse(ButtonType.NO) == ButtonType.YES) {
             try {
-                Path coursePath = Paths.get(course.getFilePath());
-                Files.deleteIfExists(coursePath);
-                masterCourses.remove(course);
+                Files.deleteIfExists(Paths.get(course.getFilePath()));
+                refreshCourses();
                 updateP2PSharedCourses();
-                showAlert(Alert.AlertType.INFORMATION, "Suppression réussie", "Le cours a été supprimé avec succès.");
             } catch (IOException e) {
-                e.printStackTrace();
-                showAlert(Alert.AlertType.ERROR, "Erreur de suppression", "Une erreur est survenue lors de la suppression du cours : " + e.getMessage());
+                showAlert(Alert.AlertType.ERROR, "Erreur", "Impossible de supprimer le fichier.");
             }
         }
     }
@@ -303,51 +248,39 @@ public class MyCoursesController {
         course.setVisible(!course.isVisible());
         courseTableView.refresh();
         updateP2PSharedCourses();
-        showAlert(Alert.AlertType.INFORMATION, "Visibilité mise à jour", "La visibilité de '" + course.getTitle() + "' a été changée.");
     }
 
     private void updateP2PSharedCourses() {
         List<Course> coursesToShare = new ArrayList<>();
         for (CourseListDisplay item : masterCourses) {
             if (item.isVisible()) {
-                coursesToShare.add(new Course(item.getTitle(), "Description", "Auteur inconnu", item.getFilePath()));
+                coursesToShare.add(new Course(item.getTitle(), "", "Auteur", item.getFilePath()));
             }
         }
-        if (mainController != null) {
-            mainController.handleCourseListChange(coursesToShare);
-        }
-    }
-
-    private static Button styledBtn(String text, String... styleClasses) {
-        Button b = new Button(text);
-        if (styleClasses != null) b.getStyleClass().addAll(styleClasses);
-        return b;
+        if (mainController != null) mainController.handleCourseListChange(coursesToShare);
     }
 
     private boolean isDownloadedCourse(CourseListDisplay course) {
         String fileName = new File(course.getFilePath()).getName();
-        String nameNoExt = fileName.endsWith(".crs") ? fileName.substring(0, fileName.length() - 4) : fileName;
-        int dash = nameNoExt.lastIndexOf('-');
-        String remoteId = (dash > 0 && dash < nameNoExt.length() - 1) ? nameNoExt.substring(dash + 1) : null;
+        return fileName.contains("-") || DownloadedCoursesRegistry.isDownloaded(fileName);
+    }
 
-        if (remoteId != null && DownloadedCoursesRegistry.isDownloaded(remoteId)) {
-            return true;
-        }
-        return dash > 0;
+    private static Button styledBtn(String text, String... styles) {
+        Button b = new Button(text);
+        b.getStyleClass().addAll(styles);
+        return b;
     }
 
     private static String normalize(String s) {
-        if (s == null) return null;
-        String n = Normalizer.normalize(s, Normalizer.Form.NFD)
-                .replaceAll("\\p{M}+", "");
-        return n.toLowerCase().trim();
+        if (s == null) return "";
+        return Normalizer.normalize(s, Normalizer.Form.NFD).replaceAll("\\p{M}+", "").toLowerCase().trim();
     }
 
     private void showAlert(Alert.AlertType type, String title, String message) {
-        Alert alert = new Alert(type);
-        alert.setTitle(title);
-        alert.setHeaderText(null);
-        alert.setContentText(message);
-        alert.showAndWait();
+        Alert a = new Alert(type);
+        a.setTitle(title);
+        a.setHeaderText(null);
+        a.setContentText(message);
+        a.showAndWait();
     }
 }
