@@ -36,18 +36,22 @@ jobs:
       - name: Setup JavaFX Modules
         shell: bash
         run: |
-          curl -L -o javafx-jmods.zip https://download2.gluonhq.com/openjfx/17.0.8/openjfx-17.0.8_${{ matrix.platform }}-x64_bin-jmods.zip
-          unzip javafx-jmods.zip
+          # Ajout de retry pour éviter l'erreur curl (18)
+          curl -L --retry 5 --connect-timeout 30 -o javafx-jmods.zip https://download2.gluonhq.com/openjfx/17.0.8/openjfx-17.0.8_${{ matrix.platform }}-x64_bin-jmods.zip
+          unzip -q javafx-jmods.zip
 
       - name: Create Executable Package (Windows)
         if: matrix.os == 'windows-latest'
         shell: bash
         run: |
+          # Création d'un dossier temp pour éviter les erreurs de mémoire WiX
+          mkdir jp-temp
           jpackage --name "E-Learning-P2P" \
                    --input target/ \
                    --main-jar demo2-1.0-SNAPSHOT.jar \
                    --main-class org.example.Main \
                    --dest output/ \
+                   --temp jp-temp \
                    --icon src/main/resources/images/logo.ico \
                    --module-path javafx-jmods-17.0.8/ \
                    --add-modules javafx.controls,javafx.fxml,javafx.graphics,javafx.web,javafx.media \
@@ -58,16 +62,12 @@ jobs:
         if: matrix.os != 'windows-latest'
         shell: bash
         run: |
-          # Note: MacOS utilise souvent .icns, Linux .png. 
-          # On utilise le logo.png pour les autres plateformes.
-          ICON_PATH="src/main/resources/images/logo.png"
-          
           jpackage --name "E-Learning-P2P" \
                    --input target/ \
                    --main-jar demo2-1.0-SNAPSHOT.jar \
                    --main-class org.example.Main \
                    --dest output/ \
-                   --icon "$ICON_PATH" \
+                   --icon src/main/resources/images/logo.png \
                    --module-path javafx-jmods-17.0.8/ \
                    --add-modules javafx.controls,javafx.fxml,javafx.graphics,javafx.web,javafx.media \
                    --type ${{ matrix.os == 'macos-latest' && 'dmg' || 'deb' }}
