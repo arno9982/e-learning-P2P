@@ -170,7 +170,14 @@ public void setIHaveTeacherRole(boolean active) {
     socket.send(p);
     try { RelayClient.announce(msg); } catch (Exception ignored) {}
 }
-
+// À ajouter dans P2PService.java
+public void triggerHello() {
+    try {
+        sendHello();
+    } catch (IOException e) {
+        System.err.println("[P2P] Échec du triggerHello : " + e.getMessage());
+    }
+}
     public synchronized void setSharedCourses(List<Course> courses) {
         lastSharedCourses.clear();
         if (courses != null) lastSharedCourses.addAll(courses);

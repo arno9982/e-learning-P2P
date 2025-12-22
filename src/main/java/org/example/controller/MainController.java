@@ -22,6 +22,7 @@ import org.example.ai.LLM; // pour le test IA (optionnel)
 import java.io.File;
 import java.io.IOException;
 import java.util.List;
+import org.example.service.RelayClient;
 
 public class MainController {
 
