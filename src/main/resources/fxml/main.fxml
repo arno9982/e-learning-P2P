@@ -14,28 +14,65 @@
             <Label styleClass="header-title brand" text="EduConnect" />
             <Region HBox.hgrow="ALWAYS" />
 
-            <MenuButton text="Paramètres" styleClass="settings">
-                <graphic>
-                    <ImageView fitHeight="20" fitWidth="20">
-                        <image>
-                            <Image url="@/images/settings.jpg" />
-                        </image>
-                    </ImageView>
-                </graphic>
-                <items>
-                    <CustomMenuItem hideOnClick="false">
-                        <content>
-                            <HBox alignment="CENTER_LEFT" spacing="5">
-                                <Label text="Pseudo :" />
-                                <TextField fx:id="pseudoField" promptText="Entrez votre pseudo" />
-                            </HBox>
-                        </content>
-                    </CustomMenuItem>
-                    <SeparatorMenuItem />
-                    <CheckMenuItem fx:id="teacherModeCheck" text="Mode Enseignant" />
-                    <CheckMenuItem fx:id="p2pVisibilityCheck" text="Visibilité P2P" />
-                </items>
-            </MenuButton>
+                 <MenuButton text="Paramètres" styleClass="settings">
+    <graphic>
+        <ImageView fitHeight="20" fitWidth="20">
+            <image>
+                <Image url="@/images/settings.jpg" />
+            </image>
+        </ImageView>
+    </graphic>
+    <items>
+        <CustomMenuItem hideOnClick="false">
+            <content>
+                <HBox alignment="CENTER_LEFT" spacing="10">
+                    <Label text="Pseudo :" prefWidth="80" />
+                    <TextField fx:id="pseudoField" promptText="Entrez votre pseudo" />
+                </HBox>
+            </content>
+        </CustomMenuItem>
+        
+        <SeparatorMenuItem />
+
+        <CustomMenuItem hideOnClick="false">
+            <content>
+                <VBox spacing="5">
+                    <Label text="Intelligence Artificielle 1" style="-fx-font-weight: bold; -fx-font-size: 11;" />
+                    <HBox alignment="CENTER_LEFT" spacing="10">
+                        <Label text="Provider :" prefWidth="80" />
+                        <ComboBox fx:id="aiProvider1Combo" promptText="Choisir..." prefWidth="150" />
+                    </HBox>
+                    <HBox alignment="CENTER_LEFT" spacing="10">
+                        <Label text="Clé API :" prefWidth="80" />
+                        <PasswordField fx:id="apiKey1Field" promptText="sk-..." />
+                    </HBox>
+                </VBox>
+            </content>
+        </CustomMenuItem>
+
+        <SeparatorMenuItem />
+
+        <CustomMenuItem hideOnClick="false">
+            <content>
+                <VBox spacing="5">
+                    <Label text="Intelligence Artificielle 2" style="-fx-font-weight: bold; -fx-font-size: 11;" />
+                    <HBox alignment="CENTER_LEFT" spacing="10">
+                        <Label text="Provider :" prefWidth="80" />
+                        <ComboBox fx:id="aiProvider2Combo" promptText="Choisir..." prefWidth="150" />
+                    </HBox>
+                    <HBox alignment="CENTER_LEFT" spacing="10">
+                        <Label text="Clé API :" prefWidth="80" />
+                        <PasswordField fx:id="apiKey2Field" promptText="AIza..." />
+                    </HBox>
+                </VBox>
+            </content>
+        </CustomMenuItem>
+
+        <SeparatorMenuItem />
+        <CheckMenuItem fx:id="teacherModeCheck" text="Mode Enseignant" />
+        <CheckMenuItem fx:id="p2pVisibilityCheck" text="Visibilité P2P" />
+    </items>
+</MenuButton>
         </HBox>
 
         <!-- Onglets -->

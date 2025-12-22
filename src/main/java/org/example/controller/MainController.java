@@ -18,6 +18,9 @@ import org.example.model.Course;
 import org.example.model.CourseListDisplay;
 import org.example.service.P2PService;
 import org.example.ai.LLM; // pour le test IA (optionnel)
+import javafx.scene.control.ComboBox;
+import javafx.scene.control.PasswordField;
+import org.example.ai.AIConfig;
 
 import java.io.File;
 import java.io.IOException;
@@ -36,6 +39,8 @@ public class MainController {
     private Tab courseConsultationTab;
     @FXML
     private CheckMenuItem teacherModeCheck;
+    @FXML private ComboBox<String> aiProvider1Combo;
+    @FXML private PasswordField apiKey1Field;
 
     @FXML
     private TextField pseudoField;
@@ -64,6 +69,21 @@ public class MainController {
         p2pService = P2PService.getInstance();
         p2pService.setMainController(this);
 
+       if (aiProvider1Combo != null) {
+        aiProvider1Combo.getItems().setAll("OPENAI", "GROQ");
+        aiProvider1Combo.setValue(AIConfig.getProvider());
+        apiKey1Field.setText(AIConfig.getApiKey());
+
+        // Écouteur : Changement de Provider
+        aiProvider1Combo.valueProperty().addListener((obs, oldVal, newVal) -> {
+            AIConfig.updateConfig(newVal, apiKey1Field.getText());
+        });
+
+        // Écouteur : Saisie de la clé (Temps réel)
+        apiKey1Field.textProperty().addListener((obs, oldVal, newVal) -> {
+            AIConfig.updateConfig(aiProvider1Combo.getValue(), newVal);
+        });
+    }
         // Table P2P
         if (p2pCourseTable != null) {
             p2pCourseTitleColumn.setCellValueFactory(cellData -> cellData.getValue().titleProperty());

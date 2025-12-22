@@ -1,75 +1,72 @@
 package org.example.ai;
 
 import org.example.util.Json;
-import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.HashMap;
 import java.util.Map;
 
-/** Config IA : corrigée pour utiliser le dossier AppData autorisé */
 public final class AIConfig {
     
-    // CORRECTION : On utilise une méthode pour obtenir le chemin dynamique défini dans Main
-    private static Path getConfDir() {
-        String basePath = System.getProperty("app.base.path", System.getProperty("user.home"));
-        return Paths.get(basePath, "data");
-    }
-
     private static Path getConfFile() {
-        return getConfDir().resolve("config.json");
+        String basePath = System.getProperty("app.base.path", System.getProperty("user.home"));
+        return Paths.get(basePath, "data", "config.json");
     }
 
-    private static volatile String provider = "GROQ"; 
-    private static volatile String apiKey;
-    private static volatile boolean bootstrapped = false;
+    private static volatile String provider = "OPENAI"; 
+    private static volatile String apiKey = "";
+    private static volatile String endpoint = "https://api.openai.com/v1/chat/completions";
+    private static volatile String model = "gpt-4-turbo";
 
+    /** Charge les paramètres depuis le fichier config.json au démarrage */
     public static synchronized void load() {
-        Path confFile = getConfFile();
-        if (Files.exists(confFile)) {
+        Path file = getConfFile();
+        if (Files.exists(file)) {
             try {
-                String json = Files.readString(confFile, StandardCharsets.UTF_8);
+                String json = Files.readString(file, StandardCharsets.UTF_8);
                 Map<?,?> m = Json.decode(json, Map.class);
                 if (m != null) {
-                    Object p = m.get("ai_provider");
-                    Object k = m.get("ai_api_key");
-                    if (p != null && !p.toString().isBlank()) provider = p.toString().trim().toUpperCase();
-                    if (k != null && !k.toString().isBlank())  apiKey   = k.toString().trim();
+                    if (m.get("ai_provider") != null) setProviderOnly(m.get("ai_provider").toString());
+                    if (m.get("ai_api_key") != null) apiKey = m.get("ai_api_key").toString();
                 }
             } catch (Exception ignored) {}
         }
     }
 
-    public static synchronized void bootstrapFromEnv() {
-        if (bootstrapped) return;
-        bootstrapped = true;
+    /** Met à jour les paramètres selon le choix UI et sauvegarde */
+    public static synchronized void updateConfig(String newProvider, String newKey) {
+        setProviderOnly(newProvider);
+        apiKey = (newKey == null) ? "" : newKey.trim();
+        save();
+    }
 
-        String p = System.getenv("AI_PROVIDER");
-        if (p != null && !p.isBlank()) provider = p.trim().toUpperCase();
-
-        String envKey = System.getenv("GROQ_API_KEY");
-        if (envKey == null || envKey.isBlank()) envKey = System.getenv("OPENAI_API_KEY");
-        if (envKey != null && !envKey.isBlank()) apiKey = envKey.trim();
+    private static void setProviderOnly(String p) {
+        provider = (p == null) ? "OPENAI" : p.toUpperCase();
+        if ("GROQ".equals(provider)) {
+            endpoint = "https://api.groq.com/openai/v1/chat/completions";
+            model = "llama-3.1-8b-instant";
+        } else {
+            endpoint = "https://api.openai.com/v1/chat/completions";
+            model = "gpt-4-turbo";
+        }
     }
 
     public static synchronized void save() {
         try {
-            Path confDir = getConfDir();
-            if (!Files.exists(confDir)) Files.createDirectories(confDir);
-            
-            Map<String,Object> m = new HashMap<>();
+            Path file = getConfFile();
+            if (!Files.exists(file.getParent())) Files.createDirectories(file.getParent());
+            Map<String, Object> m = new HashMap<>();
             m.put("ai_provider", provider);
-            m.put("ai_api_key", apiKey == null ? "" : apiKey);
-            
-            Files.writeString(getConfFile(), Json.encode(m), StandardCharsets.UTF_8,
+            m.put("ai_api_key", apiKey);
+            Files.writeString(file, Json.encode(m), StandardCharsets.UTF_8,
                     StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
         } catch (Exception ignored) {}
     }
 
+    public static String getApiKey()   { return apiKey; }
+    public static String getEndpoint() { return endpoint; }
+    public static String getModel()    { return model; }
     public static String getProvider() { return provider; }
-    public static String getApiKey()   { return apiKey;   }
-    public static void setProvider(String p) { provider = (p==null?"GROQ":p.trim().toUpperCase()); }
-    public static void setApiKey(String k)   { apiKey   = (k==null?null:k.trim()); }
 
     private AIConfig() {}
 }
