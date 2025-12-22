@@ -1,4 +1,4 @@
-name: Build Windows Only
+name: Build Windows Installer
 on: 
   push:
     branches: [ main, master ]
@@ -28,16 +28,15 @@ jobs:
           curl -L -o javafx-jmods.zip https://download2.gluonhq.com/openjfx/17.0.8/openjfx-17.0.8_windows-x64_bin-jmods.zip
           unzip -q javafx-jmods.zip
 
-      - name: Create Executable Package (Windows)
+      - name: Create Windows Installer
         shell: bash
         run: |
-          # 1. Nettoyage et isolation stricte du JAR pour la légèreté
-          rm -rf input_dir output
+          # 1. Isolation du JAR : On ne prend QUE le nécessaire
           mkdir input_dir
           cp target/demo2-1.0-SNAPSHOT.jar input_dir/
           
-          # 2. Création de l'image application avec l'icône
-          # Note: L'icône doit être au format .ico pour Windows
+          # 2. Création de l'installeur (.exe)
+          # --type exe crée un installeur qui installe l'app dans Program Files
           jpackage --name "E-Learning-P2P" \
                    --input input_dir/ \
                    --main-jar demo2-1.0-SNAPSHOT.jar \
@@ -46,14 +45,13 @@ jobs:
                    --icon src/main/resources/images/logo.ico \
                    --module-path javafx-jmods-17.0.8/ \
                    --add-modules javafx.controls,javafx.fxml,javafx.graphics,javafx.web,javafx.media,java.net.http,java.sql \
-                   --type app-image
-
-          # 3. Compression du dossier complet pour l'utilisateur final
-          cd output
-          7z a -tzip "../E-Learning-P2P-Windows.zip" "E-Learning-P2P/"
+                   --win-dir-chooser \
+                   --win-shortcut \
+                   --win-menu \
+                   --type exe
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: E-Learning-P2P-Windows
-          path: E-Learning-P2P-Windows.zip
+          name: E-Learning-P2P-Installer
+          path: output/*.exe
