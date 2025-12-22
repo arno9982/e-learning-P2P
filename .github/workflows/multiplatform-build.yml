@@ -1,23 +1,12 @@
-name: Build Multi-Platform
+name: Build Windows Only
 on: 
   push:
     branches: [ main, master ]
 
 jobs:
   build:
-    name: Build on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
-        include:
-          - os: ubuntu-latest
-            platform: linux
-          - os: windows-latest
-            platform: windows
-          - os: macos-latest
-            platform: osx
+    name: Build Windows App
+    runs-on: windows-latest
 
     steps:
       - name: Checkout code
@@ -36,18 +25,17 @@ jobs:
       - name: Setup JavaFX Modules
         shell: bash
         run: |
-          curl -L --retry 5 --connect-timeout 30 -o javafx-jmods.zip https://download2.gluonhq.com/openjfx/17.0.8/openjfx-17.0.8_${{ matrix.platform }}-x64_bin-jmods.zip
+          curl -L -o javafx-jmods.zip https://download2.gluonhq.com/openjfx/17.0.8/openjfx-17.0.8_windows-x64_bin-jmods.zip
           unzip -q javafx-jmods.zip
 
       - name: Create Executable Package (Windows)
-        if: matrix.os == 'windows-latest'
         shell: bash
         run: |
-          # 1. Isolation du JAR pour éviter d'inclure tout le projet (réduit la taille de 3Go à ~150Mo)
+          # 1. Isolation du JAR (évite les 3 Go de fichiers inutiles)
           mkdir input_dir
           cp target/demo2-1.0-SNAPSHOT.jar input_dir/
           
-          # 2. Création de l'image application (évite l'erreur de mémoire WiX light.exe)
+          # 2. Création de l'image application épurée
           jpackage --name "E-Learning-P2P" \
                    --input input_dir/ \
                    --main-jar demo2-1.0-SNAPSHOT.jar \
@@ -56,35 +44,16 @@ jobs:
                    --icon src/main/resources/images/logo.ico \
                    --module-path javafx-jmods-17.0.8/ \
                    --add-modules javafx.controls,javafx.fxml,javafx.graphics,javafx.web,javafx.media,java.net.http,java.sql \
+                   --no-header-files \
+                   --no-man-pages \
                    --type app-image
 
-          # 3. Compression en ZIP pour préserver la structure des dossiers (runtime + app)
-          # Indispensable pour éviter l'erreur "Cette application ne peut pas s'exécuter"
+          # 3. Compression en ZIP (Seule méthode fiable pour conserver la structure)
           cd output
           7z a -tzip "../E-Learning-P2P-Windows.zip" "E-Learning-P2P/"
 
-      - name: Create Executable Package (Non-Windows)
-        if: matrix.os != 'windows-latest'
-        shell: bash
-        run: |
-          mkdir input_dir_unix
-          cp target/demo2-1.0-SNAPSHOT.jar input_dir_unix/
-          
-          jpackage --name "E-Learning-P2P" \
-                   --input input_dir_unix/ \
-                   --main-jar demo2-1.0-SNAPSHOT.jar \
-                   --main-class org.example.Main \
-                   --dest output/ \
-                   --icon src/main/resources/images/logo.png \
-                   --module-path javafx-jmods-17.0.8/ \
-                   --add-modules javafx.controls,javafx.fxml,javafx.graphics,javafx.web,javafx.media,java.net.http,java.sql \
-                   --type ${{ matrix.os == 'macos-latest' && 'dmg' || 'deb' }}
-
-      - name: Upload Artifacts
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Executable-${{ matrix.os }}
-          path: |
-            E-Learning-P2P-Windows.zip
-            output/*.dmg
-            output/*.deb
+          name: E-Learning-P2P-Windows
+          path: E-Learning-P2P-Windows.zip
