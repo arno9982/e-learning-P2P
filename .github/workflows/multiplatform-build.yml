@@ -28,23 +28,35 @@ jobs:
           curl -L -o javafx-jmods.zip https://download2.gluonhq.com/openjfx/17.0.8/openjfx-17.0.8_windows-x64_bin-jmods.zip
           unzip -q javafx-jmods.zip
 
-      - name: Create Windows Installer
+      - name: Create Custom Slim Runtime (jlink)
         shell: bash
         run: |
-          # 1. Isolation du JAR : On ne prend QUE le nécessaire
+          # Création d'un JRE sur mesure contenant uniquement le strict nécessaire
+          # Cela réduit la mémoire consommée par light.exe lors de la compression
+          $JAVA_HOME/bin/jlink \
+            --module-path "javafx-jmods-17.0.8;$JAVA_HOME/jmods" \
+            --add-modules javafx.controls,javafx.fxml,javafx.graphics,javafx.web,javafx.media,java.net.http,java.sql,java.naming \
+            --strip-debug \
+            --no-man-pages \
+            --no-header-files \
+            --compress=2 \
+            --output custom-runtime
+
+      - name: Create Windows Installer (.exe)
+        shell: bash
+        run: |
+          # 1. Isolation du JAR
           mkdir input_dir
           cp target/demo2-1.0-SNAPSHOT.jar input_dir/
           
-          # 2. Création de l'installeur (.exe)
-          # --type exe crée un installeur qui installe l'app dans Program Files
+          # 2. Création de l'installeur utilisant le runtime réduit
           jpackage --name "E-Learning-P2P" \
                    --input input_dir/ \
                    --main-jar demo2-1.0-SNAPSHOT.jar \
                    --main-class org.example.Main \
                    --dest output/ \
+                   --runtime-image custom-runtime \
                    --icon src/main/resources/images/logo.ico \
-                   --module-path javafx-jmods-17.0.8/ \
-                   --add-modules javafx.controls,javafx.fxml,javafx.graphics,javafx.web,javafx.media,java.net.http,java.sql \
                    --win-dir-chooser \
                    --win-shortcut \
                    --win-menu \
