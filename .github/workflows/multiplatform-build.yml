@@ -48,6 +48,7 @@ jobs:
                    --main-jar demo2-1.0-SNAPSHOT.jar \
                    --main-class org.example.Main \
                    --dest output/ \
+                   --icon src/main/resources/images/logo.ico \
                    --module-path javafx-jmods-17.0.8/ \
                    --add-modules javafx.controls,javafx.fxml,javafx.graphics,javafx.web,javafx.media \
                    --win-shortcut --win-menu --win-dir-chooser \
@@ -57,11 +58,16 @@ jobs:
         if: matrix.os != 'windows-latest'
         shell: bash
         run: |
+          # Note: MacOS utilise souvent .icns, Linux .png. 
+          # On utilise le logo.png pour les autres plateformes.
+          ICON_PATH="src/main/resources/images/logo.png"
+          
           jpackage --name "E-Learning-P2P" \
                    --input target/ \
                    --main-jar demo2-1.0-SNAPSHOT.jar \
                    --main-class org.example.Main \
                    --dest output/ \
+                   --icon "$ICON_PATH" \
                    --module-path javafx-jmods-17.0.8/ \
                    --add-modules javafx.controls,javafx.fxml,javafx.graphics,javafx.web,javafx.media \
                    --type ${{ matrix.os == 'macos-latest' && 'dmg' || 'deb' }}

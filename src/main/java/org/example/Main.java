@@ -1,11 +1,11 @@
 package org.example;
 
 import java.io.File;
-
 import javafx.application.Application;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
+import javafx.scene.image.Image; // Import ajouté
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 
@@ -14,7 +14,6 @@ public class Main extends Application {
     @Override
     public void start(Stage primaryStage) {
         try {
-            // Initialisation du dossier de données autorisé
             prepareDataFolder();
 
             FXMLLoader loader = new FXMLLoader(getClass().getResource("/fxml/main.fxml"));
@@ -27,7 +26,11 @@ public class Main extends Application {
 
             primaryStage.setTitle("EduConnect - P2P Learning");
             
-            // Garantit que les boutons réduire/agrandir/fermer sont présents
+            // AJOUT DE L'ICÔNE DANS LA BARRE DES TÂCHES
+            if (getClass().getResource("/images/logo.png") != null) {
+                primaryStage.getIcons().add(new Image(getClass().getResourceAsStream("/images/logo.png")));
+            }
+            
             primaryStage.initStyle(StageStyle.DECORATED); 
             primaryStage.setResizable(true);
 
@@ -42,7 +45,6 @@ public class Main extends Application {
         String path;
         String os = System.getProperty("os.name").toLowerCase();
         
-        // Résout l'erreur de permission dans Program Files
         if (os.contains("win")) {
             path = System.getenv("APPDATA") + File.separator + "E-Learning-P2P";
         } else {
@@ -55,7 +57,6 @@ public class Main extends Application {
         File coursesDir = new File(path, "courses");
         if (!coursesDir.exists()) coursesDir.mkdirs();
 
-        // On définit une propriété système pour que les autres classes y accèdent
         System.setProperty("app.base.path", path);
     }
 

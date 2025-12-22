@@ -59,7 +59,7 @@ public class MyCoursesController {
     public void initialize() {
         // CORRECTION : Utilisation du chemin AppData pour éviter l'erreur de permissions
         String basePath = System.getProperty("app.base.path", System.getProperty("user.home"));
-        this.saveDirectory = Paths.get(basePath, "courses");
+        this.saveDirectory = CourseRepository.getCoursesDir();
 
         try {
             if (!Files.exists(saveDirectory)) {
@@ -178,32 +178,33 @@ public class MyCoursesController {
         masterCourses.setAll(tmp);
     }
 
-    @FXML
-    private void handleImportCourse() {
-        FileChooser fileChooser = new FileChooser();
-        fileChooser.setTitle("Importer un cours");
-        fileChooser.getExtensionFilters().addAll(
-                new FileChooser.ExtensionFilter("Tous les formats", "*.crs", "*.zip"),
-                new FileChooser.ExtensionFilter("SCORM (.zip)", "*.zip"),
-                new FileChooser.ExtensionFilter("Plateforme (.crs)", "*.crs")
-        );
+   @FXML
+private void handleImportCourse() {
+    FileChooser fileChooser = new FileChooser();
+    fileChooser.setTitle("Choisir un cours à ajouter");
+    fileChooser.getExtensionFilters().add(
+        new FileChooser.ExtensionFilter("Cours Plateforme (*.crs)", "*.crs")
+    );
 
-        File file = fileChooser.showOpenDialog(null);
-        if (file != null) {
-            try {
-                if (file.getName().toLowerCase().endsWith(".zip")) {
-                    ScormImporter.importScorm(file.toPath(), saveDirectory);
-                } else {
-                    Path dest = saveDirectory.resolve(file.getName());
-                    Files.copy(file.toPath(), dest, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                }
-                refreshCourses();
-                showAlert(Alert.AlertType.INFORMATION, "Succès", "Importation terminée.");
-            } catch (IOException e) {
-                showAlert(Alert.AlertType.ERROR, "Erreur", "Importation échouée : " + e.getMessage());
-            }
+    File file = fileChooser.showOpenDialog(null);
+    if (file != null) {
+        try {
+            // Créer le nom de destination
+            Path dest = saveDirectory.resolve(file.getName());
+            
+            // Copie avec écrasement si nécessaire
+            Files.copy(file.toPath(), dest, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            
+            // Forcer le refresh du repository et de l'UI
+            CourseRepository.reloadAllCourses();
+            refreshCourses();
+            
+            showAlert(Alert.AlertType.INFORMATION, "Importation", "Le cours a été ajouté avec succès.");
+        } catch (IOException e) {
+            showAlert(Alert.AlertType.ERROR, "Erreur", "Impossible d'importer le fichier : " + e.getMessage());
         }
     }
+}
 
     private void handleExportCourse(CourseListDisplay course) {
         FileChooser fileChooser = new FileChooser();
