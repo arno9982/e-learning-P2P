@@ -31,11 +31,13 @@ jobs:
       - name: Create Executable Package (Windows)
         shell: bash
         run: |
-          # 1. Isolation du JAR (évite les 3 Go de fichiers inutiles)
+          # 1. Nettoyage et isolation stricte du JAR pour la légèreté
+          rm -rf input_dir output
           mkdir input_dir
           cp target/demo2-1.0-SNAPSHOT.jar input_dir/
           
-          # 2. Création de l'image application épurée
+          # 2. Création de l'image application avec l'icône
+          # Note: L'icône doit être au format .ico pour Windows
           jpackage --name "E-Learning-P2P" \
                    --input input_dir/ \
                    --main-jar demo2-1.0-SNAPSHOT.jar \
@@ -44,11 +46,9 @@ jobs:
                    --icon src/main/resources/images/logo.ico \
                    --module-path javafx-jmods-17.0.8/ \
                    --add-modules javafx.controls,javafx.fxml,javafx.graphics,javafx.web,javafx.media,java.net.http,java.sql \
-                   --no-header-files \
-                   --no-man-pages \
                    --type app-image
 
-          # 3. Compression en ZIP (Seule méthode fiable pour conserver la structure)
+          # 3. Compression du dossier complet pour l'utilisateur final
           cd output
           7z a -tzip "../E-Learning-P2P-Windows.zip" "E-Learning-P2P/"
 
