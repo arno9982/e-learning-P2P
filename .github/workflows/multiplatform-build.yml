@@ -44,12 +44,13 @@ jobs:
         if: matrix.os == 'windows-latest'
         shell: bash
         run: |
-          # Nettoyage préventif du dossier target pour libérer de la mémoire
-          find target/ -type f -not -name "demo2-1.0-SNAPSHOT.jar" -delete
+          # SOLUTION POUR LA TAILLE : Isoler le JAR dans un dossier propre
+          mkdir input_dir
+          cp target/demo2-1.0-SNAPSHOT.jar input_dir/
           
-          # Création de l'image application (plus léger que l'installeur EXE)
+          # Création de l'image application propre
           jpackage --name "E-Learning-P2P" \
-                   --input target/ \
+                   --input input_dir/ \
                    --main-jar demo2-1.0-SNAPSHOT.jar \
                    --main-class org.example.Main \
                    --dest output/ \
@@ -62,8 +63,12 @@ jobs:
         if: matrix.os != 'windows-latest'
         shell: bash
         run: |
+          # Isolation similaire pour Linux/Mac pour éviter les fichiers lourds
+          mkdir input_dir_unix
+          cp target/demo2-1.0-SNAPSHOT.jar input_dir_unix/
+          
           jpackage --name "E-Learning-P2P" \
-                   --input target/ \
+                   --input input_dir_unix/ \
                    --main-jar demo2-1.0-SNAPSHOT.jar \
                    --main-class org.example.Main \
                    --dest output/ \
