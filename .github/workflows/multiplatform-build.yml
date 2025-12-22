@@ -36,7 +36,7 @@ jobs:
       - name: Setup JavaFX Modules
         shell: bash
         run: |
-          # Ajout de retry pour éviter l'erreur curl (18)
+          # Téléchargement robuste avec retries pour éviter l'erreur curl (18)
           curl -L --retry 5 --connect-timeout 30 -o javafx-jmods.zip https://download2.gluonhq.com/openjfx/17.0.8/openjfx-17.0.8_${{ matrix.platform }}-x64_bin-jmods.zip
           unzip -q javafx-jmods.zip
 
@@ -44,19 +44,19 @@ jobs:
         if: matrix.os == 'windows-latest'
         shell: bash
         run: |
-          # Création d'un dossier temp pour éviter les erreurs de mémoire WiX
-          mkdir jp-temp
+          # Nettoyage préventif du dossier target pour libérer de la mémoire
+          find target/ -type f -not -name "demo2-1.0-SNAPSHOT.jar" -delete
+          
+          # Création de l'image application (plus léger que l'installeur EXE)
           jpackage --name "E-Learning-P2P" \
                    --input target/ \
                    --main-jar demo2-1.0-SNAPSHOT.jar \
                    --main-class org.example.Main \
                    --dest output/ \
-                   --temp jp-temp \
                    --icon src/main/resources/images/logo.ico \
                    --module-path javafx-jmods-17.0.8/ \
                    --add-modules javafx.controls,javafx.fxml,javafx.graphics,javafx.web,javafx.media \
-                   --win-shortcut --win-menu --win-dir-chooser \
-                   --type exe
+                   --type app-image
 
       - name: Create Executable Package (Non-Windows)
         if: matrix.os != 'windows-latest'
