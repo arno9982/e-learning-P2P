@@ -43,12 +43,11 @@ jobs:
         if: matrix.os == 'windows-latest'
         shell: bash
         run: |
-          # 1. Isolation stricte pour éviter les 3Go
+          # 1. Isolation du JAR pour éviter d'inclure tout le projet (réduit la taille de 3Go à ~150Mo)
           mkdir input_dir
           cp target/demo2-1.0-SNAPSHOT.jar input_dir/
           
-          # 2. Création de l'EXE (ou MSI pour un installeur propre)
-          # On utilise --type exe pour créer un fichier d'installation simple
+          # 2. Création de l'image application (évite l'erreur de mémoire WiX light.exe)
           jpackage --name "E-Learning-P2P" \
                    --input input_dir/ \
                    --main-jar demo2-1.0-SNAPSHOT.jar \
@@ -57,9 +56,12 @@ jobs:
                    --icon src/main/resources/images/logo.ico \
                    --module-path javafx-jmods-17.0.8/ \
                    --add-modules javafx.controls,javafx.fxml,javafx.graphics,javafx.web,javafx.media,java.net.http,java.sql \
-                   --win-dir-chooser \
-                   --win-shortcut \
-                   --type exe 
+                   --type app-image
+
+          # 3. Compression en ZIP pour préserver la structure des dossiers (runtime + app)
+          # Indispensable pour éviter l'erreur "Cette application ne peut pas s'exécuter"
+          cd output
+          7z a -tzip "../E-Learning-P2P-Windows.zip" "E-Learning-P2P/"
 
       - name: Create Executable Package (Non-Windows)
         if: matrix.os != 'windows-latest'
@@ -82,4 +84,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Executable-${{ matrix.os }}
-          path: output/
+          path: |
+            E-Learning-P2P-Windows.zip
+            output/*.dmg
+            output/*.deb
