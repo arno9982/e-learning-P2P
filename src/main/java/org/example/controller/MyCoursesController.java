@@ -25,7 +25,7 @@ import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import org.example.repository.CourseRepository;
+import org.example.service.CourseRepository;
 
 public class MyCoursesController {
 
