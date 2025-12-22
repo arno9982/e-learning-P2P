@@ -36,7 +36,6 @@ jobs:
       - name: Setup JavaFX Modules
         shell: bash
         run: |
-          # Téléchargement robuste avec retries pour éviter l'erreur curl (18)
           curl -L --retry 5 --connect-timeout 30 -o javafx-jmods.zip https://download2.gluonhq.com/openjfx/17.0.8/openjfx-17.0.8_${{ matrix.platform }}-x64_bin-jmods.zip
           unzip -q javafx-jmods.zip
 
@@ -44,11 +43,12 @@ jobs:
         if: matrix.os == 'windows-latest'
         shell: bash
         run: |
-          # SOLUTION POUR LA TAILLE : Isoler le JAR dans un dossier propre
+          # 1. Isolation stricte pour éviter les 3Go
           mkdir input_dir
           cp target/demo2-1.0-SNAPSHOT.jar input_dir/
           
-          # Création de l'image application propre
+          # 2. Création de l'EXE (ou MSI pour un installeur propre)
+          # On utilise --type exe pour créer un fichier d'installation simple
           jpackage --name "E-Learning-P2P" \
                    --input input_dir/ \
                    --main-jar demo2-1.0-SNAPSHOT.jar \
@@ -56,14 +56,15 @@ jobs:
                    --dest output/ \
                    --icon src/main/resources/images/logo.ico \
                    --module-path javafx-jmods-17.0.8/ \
-                   --add-modules javafx.controls,javafx.fxml,javafx.graphics,javafx.web,javafx.media \
-                   --type app-image
+                   --add-modules javafx.controls,javafx.fxml,javafx.graphics,javafx.web,javafx.media,java.net.http,java.sql \
+                   --win-dir-chooser \
+                   --win-shortcut \
+                   --type exe 
 
       - name: Create Executable Package (Non-Windows)
         if: matrix.os != 'windows-latest'
         shell: bash
         run: |
-          # Isolation similaire pour Linux/Mac pour éviter les fichiers lourds
           mkdir input_dir_unix
           cp target/demo2-1.0-SNAPSHOT.jar input_dir_unix/
           
@@ -74,7 +75,7 @@ jobs:
                    --dest output/ \
                    --icon src/main/resources/images/logo.png \
                    --module-path javafx-jmods-17.0.8/ \
-                   --add-modules javafx.controls,javafx.fxml,javafx.graphics,javafx.web,javafx.media \
+                   --add-modules javafx.controls,javafx.fxml,javafx.graphics,javafx.web,javafx.media,java.net.http,java.sql \
                    --type ${{ matrix.os == 'macos-latest' && 'dmg' || 'deb' }}
 
       - name: Upload Artifacts
