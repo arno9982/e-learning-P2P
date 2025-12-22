@@ -170,14 +170,41 @@ public class MainController {
 
             myCoursesController.refreshCourses();
 
-            if (teacherModeCheck != null) {
-                teacherModeCheck.selectedProperty().addListener((obs, oldVal, newVal) -> {
-                    courseEditorTab.setDisable(!newVal);
-                    if (!newVal) {
-                        mainTabPane.getSelectionModel().select(myCoursesTab);
-                    }
-                });
-            }
+           if (teacherModeCheck != null) {
+    teacherModeCheck.selectedProperty().addListener((obs, oldVal, newVal) -> {
+        // 1. Gérer l'UI
+        courseEditorTab.setDisable(!newVal);
+        if (!newVal) {
+            mainTabPane.getSelectionModel().select(myCoursesTab);
+        }
+
+        // 2. Informer le service P2P de notre rôle
+        p2pService.setIHaveTeacherRole(newVal);
+
+        if (newVal) {
+            // 3. LANCER LE BOOTSTRAP (Seulement pour l'enseignant)
+            new Thread(() -> {
+                try {
+                    // On essaie de lancer le serveur. S'il tourne déjà, l'exception sera ignorée.
+                    org.example.server.BootstrapServer.main(new String[0]);
+                } catch (Exception e) {
+                    System.out.println("Le serveur Bootstrap tourne déjà ou erreur : " + e.getMessage());
+                }
+            }).start();
+
+            // 4. L'enseignant utilise son propre serveur
+            RelayClient.RELAY_BASE = "http://localhost:8080";
+        }
+
+        // 5. Envoyer un message immédiatement pour prévenir les élèves
+        if (p2pService.isServiceRunning()) {
+            try {
+                // Créer une méthode publique triggerHello() dans P2PService qui appelle sendHello()
+                p2pService.triggerHello(); 
+            } catch (Exception ignored) {}
+        }
+    });
+}
         } catch (IOException e) {
             e.printStackTrace();
         }

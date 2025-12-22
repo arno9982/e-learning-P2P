@@ -1,6 +1,6 @@
-// src/main/java/org/example/service/P2PService.java
 package org.example.service;
 
+import javafx.application.Platform;
 import org.example.controller.MainController;
 import org.example.model.Course;
 import org.example.model.CourseAdvert;
@@ -14,17 +14,8 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-/**
- * Service P2P (singleton) :
- *  - Découverte LAN (multicast) + relai
- *  - Publication de la liste des cours visibles (setSharedCourses) -> déléguée à CourseServer
- *  - Petit serveur TCP local (CourseServer) pour servir les .crs (protocole DataInput/DataOutput)
- *  - Téléchargement d'un cours distant (downloadCourseBytes)
- *  - Exposition d'une liste de cours réseau pour l'UI (getAllNetworkCourses)
- */
 public class P2PService {
 
-    // ====== Singleton ======
     private static P2PService INSTANCE;
     public static synchronized P2PService getInstance() {
         if (INSTANCE == null) INSTANCE = new P2PService();
@@ -32,7 +23,6 @@ public class P2PService {
     }
     private P2PService() {}
 
-    // ====== Réseau & état ======
     public static final String MCAST_ADDR = "239.255.42.42";
     public static final int MCAST_PORT = 42424;
     private static final int HEARTBEAT_MS = 3000;
@@ -43,43 +33,50 @@ public class P2PService {
     private String token;
     private int tcpPort = 5055;
 
-    /** inventaire publié dans HELLO (id/titre/ttl) */
     private final Set<CourseAdvert> visible = ConcurrentHashMap.newKeySet();
-
-    /** source connue pour un courseId (utile si tu veux d’autres schémas ensuite) */
     private final Map<String, HostPort> idSource = new ConcurrentHashMap<>();
     private record HostPort(String host, int port) {}
 
     private MulticastSocket socket;
     private InetAddress group;
     private volatile boolean running;
-
-    /** Serveur de fichiers .crs */
     private CourseServer courseServer;
-
-    /** Dernière liste partagée (pour re-pousser au serveur si redémarrage/port changé) */
     private final List<Course> lastSharedCourses = new CopyOnWriteArrayList<>();
+    private MainController mainController;
+    private boolean iHaveTeacherRole = false; 
 
-    private MainController mainController; // pour refresh UI si besoin
+public void setIHaveTeacherRole(boolean active) {
+    this.iHaveTeacherRole = active;
+}
 
-    // ====== API pour les contrôleurs ======
     public void setMainController(MainController mainController) { this.mainController = mainController; }
 
-    /** Démarre le P2P si pas déjà lancé */
     public synchronized void startP2PService(String pseudo, boolean withRelay) throws IOException {
         if (running) return;
         this.peerId = UUID.randomUUID().toString();
         this.token  = UUID.randomUUID().toString();
         this.pseudo = (pseudo == null || pseudo.isBlank()) ? "user" : pseudo.trim();
 
-        // 1) serveur TCP local pour servir les .crs (essaie une fenêtre de ports)
+        // 1) Serveur TCP local
         startCourseServerOnFreePort();
 
-        // 2) multicast
+        // 2) Multicast corrigé pour le WiFi
         group = InetAddress.getByName(MCAST_ADDR);
         socket = new MulticastSocket(MCAST_PORT);
         socket.setReuseAddress(true);
-        socket.joinGroup(group);
+        
+        // Sélection de l'interface réseau (WiFi/Ethernet au lieu de Virtuelle)
+        NetworkInterface ni = findBestNetworkInterface();
+        if (ni != null) {
+            socket.setNetworkInterface(ni);
+            socket.joinGroup(new InetSocketAddress(group, MCAST_PORT), ni);
+            System.out.println("[P2P] Interface choisie : " + ni.getDisplayName());
+        } else {
+            // Fallback si aucune interface spécifique n'est trouvée
+            socket.joinGroup(group);
+        }
+
+        socket.setTimeToLive(2); // Autorise le passage de switchs réseau locaux
         socket.setLoopbackMode(false);
 
         Thread listen = new Thread(this::listenLoop, "mcast-listen");
@@ -91,8 +88,6 @@ public class P2PService {
         hb.start();
 
         running = true;
-
-        // 3) premier HELLO + relai éventuel
         sendHello();
 
         if (withRelay) {
@@ -103,27 +98,87 @@ public class P2PService {
         }
     }
 
-    /** Arrête P2P + serveur TCP */
-    public synchronized void stopP2PService() {
-        running = false;
-        try { if (socket != null) { socket.leaveGroup(group); socket.close(); } } catch (Exception ignored) {}
-        stopCourseServer();
-        visible.clear(); idSource.clear();
+    /** Trouve l'interface réseau active (WiFi ou LAN) en ignorant les cartes virtuelles */
+    private NetworkInterface findBestNetworkInterface() throws SocketException {
+        Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+        while (interfaces.hasMoreElements()) {
+            NetworkInterface ni = interfaces.nextElement();
+            if (ni.isLoopback() || !ni.isUp() || !ni.supportsMulticast() || ni.isVirtual()) continue;
+            
+            // On privilégie les interfaces WiFi ou Ethernet physiques
+            String name = ni.getName().toLowerCase();
+            if (name.contains("wlan") || name.contains("eth") || name.contains("en")) {
+                return ni;
+            }
+        }
+        return null;
     }
 
-    public boolean isServiceRunning() { return running; }
+   private void listenLoop() {
+    while (running) {
+        try {
+            byte[] buf = new byte[8192];
+            DatagramPacket p = new DatagramPacket(buf, buf.length);
+            socket.receive(p);
 
-    /** Met à jour la liste des cours à partager (bouton "Rendre visible" côté Mes cours) */
+            String senderIp = p.getAddress().getHostAddress();
+            String json = new String(p.getData(), 0, p.getLength(), StandardCharsets.UTF_8);
+            HelloMessage m = Json.decode(json, HelloMessage.class);
+
+            if (m != null && "HELLO".equals(m.type)) {
+                
+                // CORRECTION : Si c'est un prof, on configure l'IP du relais automatiquement
+                if (m.isTeacher && (peerId == null || !peerId.equals(m.peerId))) {
+                    RelayClient.RELAY_BASE = "http://" + senderIp + ":8080";
+                    // Optionnel : System.out.println("Relais auto-configuré sur : " + senderIp);
+                }
+
+                if (peerId != null && !peerId.equals(m.peerId)) {
+                    DiscoveredPeers.get().updateFromHello(m, senderIp);
+                    if (mainController != null) {
+                        Platform.runLater(() -> mainController.refreshP2PCourses());
+                    }
+                }
+            }
+        } catch (IOException e) {
+            if (running) System.err.println("[P2P] Erreur réception : " + e.getMessage());
+        }
+    }
+}
+
+    private void heartbeatLoop() {
+        while (running) {
+            try {
+                Set<CourseAdvert> snapshot = new HashSet<>();
+                for (CourseAdvert c : visible) snapshot.add(c.withNewExpiry(EXPIRY_MS));
+                visible.clear(); visible.addAll(snapshot);
+
+                sendHello();
+                Thread.sleep(HEARTBEAT_MS);
+            } catch (Exception ignored) {}
+        }
+    }
+
+  private void sendHello() throws IOException {
+    if (peerId == null || socket == null) return;
+    
+    // Ajout de iHaveTeacherRole à la fin
+    HelloMessage msg = new HelloMessage(peerId, pseudo, tcpPort, new ArrayList<>(visible), token, iHaveTeacherRole);
+    
+    byte[] data = Json.encode(msg).getBytes(StandardCharsets.UTF_8);
+    DatagramPacket p = new DatagramPacket(data, data.length, group, MCAST_PORT);
+    socket.send(p);
+    try { RelayClient.announce(msg); } catch (Exception ignored) {}
+}
+
     public synchronized void setSharedCourses(List<Course> courses) {
-        // on mémorise pour rediffuser côté serveur si on redémarre/port change
         lastSharedCourses.clear();
         if (courses != null) lastSharedCourses.addAll(courses);
 
-        // publier en multicast (même id que CourseServer: nom de fichier sans .crs)
         visible.clear();
         if (courses != null) {
             for (Course c : courses) {
-                String path = c.getFilePath();                 // ex: data/courses/python.crs
+                String path = c.getFilePath();
                 String file = (path == null) ? "" : new java.io.File(path).getName();
                 String id = file.endsWith(".crs") ? file.substring(0, file.length() - 4) : file;
                 if (id == null || id.isBlank()) continue;
@@ -132,7 +187,6 @@ public class P2PService {
             }
         }
 
-        // pousser immédiatement au CourseServer
         if (courseServer != null) {
             courseServer.setSharedCourses(lastSharedCourses);
         }
@@ -140,26 +194,21 @@ public class P2PService {
         try { if (running) sendHello(); } catch (IOException ignored) {}
     }
 
-    /** Retourne la liste des cours réseau pour l’UI (Recherche des cours) */
     public List<Course> getAllNetworkCourses() {
         List<Course> out = new ArrayList<>();
         for (DiscoveredPeers.Row r : DiscoveredPeers.get().snapshotRows()) {
             String host = "<relay>".equals(r.ip) ? resolveRelayHost() : r.ip;
             idSource.put(r.courseId, new HostPort(host, r.tcpPort));
-
-            // On encode la source dans filePath : "p2p://host:port/courseId"
             String fp = "p2p://" + host + ":" + r.tcpPort + "/" + r.courseId;
-
             Course c = new Course(r.title, "", r.pseudo, fp);
             out.add(c);
         }
         return out;
     }
 
-    /** Télécharge le .crs via le protocole binaire du CourseServer (UTF, length, bytes) */
     public byte[] downloadCourseBytes(Course course) throws IOException {
         if (course == null || course.getFilePath() == null) throw new IOException("Course/filePath nul");
-        URI uri = URI.create(course.getFilePath()); // p2p://IP:port/courseId
+        URI uri = URI.create(course.getFilePath());
         String host = uri.getHost();
         int port = (uri.getPort() == -1) ? tcpPort : uri.getPort();
         String courseId = uri.getPath().replaceFirst("^/", "");
@@ -171,24 +220,20 @@ public class P2PService {
                 sock.setSoTimeout(15_000);
 
                 try (DataOutputStream out = new DataOutputStream(new BufferedOutputStream(sock.getOutputStream()));
-                     DataInputStream  in  = new DataInputStream(new BufferedInputStream(sock.getInputStream()))) {
+                     DataInputStream in = new DataInputStream(new BufferedInputStream(sock.getInputStream()))) {
 
                     out.writeUTF("GET");
                     out.writeUTF(courseId);
-                    out.writeUTF("none"); // si besoin: token
+                    out.writeUTF("none");
                     out.flush();
 
                     String status = in.readUTF();
                     if (!"OK".equals(status)) {
                         String msg = in.readUTF();
-                        throw new IOException("Serveur a répondu: " + msg);
+                        throw new IOException("Serveur a répondu : " + msg);
                     }
 
                     long len = in.readLong();
-                    if (len <= 0 || len > (512L * 1024 * 1024)) {
-                        throw new IOException("Taille invalide: " + len);
-                    }
-
                     ByteArrayOutputStream baos = new ByteArrayOutputStream((int) len);
                     byte[] buf = new byte[64 * 1024];
                     long rest = len;
@@ -208,88 +253,29 @@ public class P2PService {
         throw (last != null ? last : new IOException("Échec de téléchargement"));
     }
 
-    // ====== Boucles réseau ======
-
-    private void listenLoop() {
-        byte[] buf = new byte[8192];
-        DatagramPacket p = new DatagramPacket(buf, buf.length);
-        while (running) {
-            try {
-                socket.receive(p);
-                String json = new String(p.getData(), 0, p.getLength(), StandardCharsets.UTF_8);
-                HelloMessage m = Json.decode(json, HelloMessage.class);
-                if (m == null || !"HELLO".equals(m.type)) continue;
-                if (peerId != null && peerId.equals(m.peerId)) continue;
-
-                DiscoveredPeers.get().updateFromHello(m, p.getAddress().getHostAddress());
-
-                if (mainController != null) mainController.refreshP2PCourses();
-            } catch (IOException ignored) {}
-        }
-    }
-
-    private void heartbeatLoop() {
-        while (running) {
-            try {
-                // rafraîchir TTL + renvoyer HELLO
-                Set<CourseAdvert> snapshot = new HashSet<>();
-                for (CourseAdvert c : visible) snapshot.add(c.withNewExpiry(EXPIRY_MS));
-                visible.clear(); visible.addAll(snapshot);
-
-                sendHello();
-                Thread.sleep(HEARTBEAT_MS);
-            } catch (Exception ignored) {}
-        }
-    }
-
-    private void sendHello() throws IOException {
-        if (peerId == null) return;
-        HelloMessage msg = new HelloMessage(peerId, pseudo, tcpPort, new ArrayList<>(visible), token);
-        byte[] data = Json.encode(msg).getBytes(StandardCharsets.UTF_8);
-        DatagramPacket p = new DatagramPacket(data, data.length, group, MCAST_PORT);
-        socket.send(p);
-        try { RelayClient.announce(msg); } catch (Exception ignored) {}
-    }
-
-    // ====== Gestion CourseServer ======
-
     private void startCourseServerOnFreePort() throws IOException {
         if (courseServer != null) return;
-
-        int start = tcpPort; // 5055 par défaut
-        IOException last = null;
+        int start = tcpPort;
         for (int p = start; p < start + 16; p++) {
             try {
                 CourseServer srv = new CourseServer(p);
                 srv.start();
                 this.courseServer = srv;
                 this.tcpPort = p;
-
-                // pousser la dernière liste visible dans le serveur
-                if (!lastSharedCourses.isEmpty()) {
-                    courseServer.setSharedCourses(lastSharedCourses);
-                }
-                System.out.println("[P2P] CourseServer écoute sur " + tcpPort);
+                if (!lastSharedCourses.isEmpty()) courseServer.setSharedCourses(lastSharedCourses);
                 return;
-            } catch (IOException e) {
-                last = e; // essaie le port suivant
-            }
+            } catch (IOException ignored) {}
         }
-        throw (last != null ? last : new IOException("Aucun port libre entre " + start + " et " + (start + 15)));
+        throw new IOException("Aucun port TCP libre trouvé.");
     }
 
-    private void stopCourseServer() {
-        if (courseServer != null) {
-            try { courseServer.stop(); } catch (Exception ignored) {}
-            courseServer = null;
-        }
+    public synchronized void stopP2PService() {
+        running = false;
+        try { if (socket != null) { socket.leaveGroup(group); socket.close(); } } catch (Exception ignored) {}
+        if (courseServer != null) { courseServer.stop(); courseServer = null; }
+        visible.clear(); idSource.clear();
     }
 
-    // ====== Divers ======
-    private String resolveRelayHost() {
-        // Si tu implémentes un téléchargement via relai plus tard,
-        // retourne ici l’hôte du relai. Pour l’instant, on renvoie loopback
-        // pour éviter les NPE si une ligne relai apparaît.
-        return "127.0.0.1";
-    }
+    public boolean isServiceRunning() { return running; }
+    private String resolveRelayHost() { return "127.0.0.1"; }
 }
