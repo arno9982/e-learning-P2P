@@ -11,11 +11,27 @@ import java.util.*;
 
 public class GroqService implements LLMService {
 
+    private final String overrideKey;
+
+    // Constructeur par défaut
+    public GroqService() {
+        this.overrideKey = null;
+    }
+
+    // Constructeur utilisé par LLM.get()
+    public GroqService(String apiKey) {
+        this.overrideKey = apiKey;
+    }
+
     @Override
     public String generateNotionHtml(String title, String extraPrompt, int words) throws Exception {
         
-        // On récupère les valeurs actuelles (mis à jour par l'UI)
-        String apiKey = AIConfig.getApiKey();
+        // Priorité à la clé passée au constructeur, sinon celle de AIConfig
+        String apiKey = (overrideKey != null && !overrideKey.isBlank()) 
+                        ? overrideKey 
+                        : AIConfig.getApiKey();
+        
+        // L'URL et le Modèle sont récupérés dynamiquement (OpenAI ou Groq)
         String url = AIConfig.getEndpoint();
         String model = AIConfig.getModel();
 
@@ -28,7 +44,7 @@ public class GroqService implements LLMService {
         Map<String, Object> body = new HashMap<>();
         body.put("model", model);
         body.put("messages", List.of(
-                Map.of("role", "system", "content", "Tu es un assistant pédagogique. Réponds UNIQUEMENT en HTML simple."),
+                Map.of("role", "system", "content", "Tu es un assistant pédagogique concis. Réponds UNIQUEMENT en HTML simple (<h3>, <p>, <ul>, <li>)."),
                 Map.of("role", "user", "content", userPrompt)
         ));
         body.put("temperature", 0.4);
@@ -47,9 +63,11 @@ public class GroqService implements LLMService {
             throw new IOException("Erreur API (" + resp.statusCode() + "): " + resp.body());
         }
 
-        // Extraction de la réponse
+        // Extraction de la réponse JSON
         Map<?, ?> parsed = Json.decode(resp.body(), Map.class);
         List<?> choices = (List<?>) parsed.get("choices");
+        if (choices == null || choices.isEmpty()) throw new IOException("Réponse IA vide.");
+        
         Map<?, ?> first = (Map<?, ?>) choices.get(0);
         Map<?, ?> msg = (Map<?, ?>) first.get("message");
         
@@ -57,6 +75,10 @@ public class GroqService implements LLMService {
     }
 
     private String buildPrompt(String title, String extra, int words) {
-        return "Sujet: " + title + "\nConsignes: " + extra + "\nLongueur: " + words + " mots environ.";
+        StringBuilder sb = new StringBuilder();
+        sb.append("Sujet: ").append(title).append("\n");
+        if (extra != null && !extra.isBlank()) sb.append("Consignes: ").append(extra).append("\n");
+        sb.append("Longueur cible: ").append(words).append(" mots.");
+        return sb.toString();
     }
 }
