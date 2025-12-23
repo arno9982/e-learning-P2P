@@ -1,137 +1,61 @@
-name: Build Windows Installer (Ultra-Optimized)
+name: Build Windows Installer
 on: 
   push:
     branches: [ main, master ]
+
 jobs:
   build:
-    name: Build Windows Installer
+    name: Build Windows App
     runs-on: windows-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
           cache: 'maven'
-          
-      - name: Build JAR with Maven
+
+      - name: Build with Maven
+        # On utilise le Shade plugin pour créer un JAR exécutable unique
+        run: mvn clean package -DskipTests
+
+      - name: Setup JavaFX Modules
         shell: bash
         run: |
-          echo "=== Construction du JAR avec dépendances ==="
-          mvn clean package -DskipTests
-          
-          echo ""
-          echo "=== Taille du JAR généré ==="
-          ls -lh target/demo2-1.0-SNAPSHOT.jar
-          
-      - name: Download JavaFX JMODs (Minimal)
-        shell: bash
-        run: |
-          echo "=== Téléchargement des modules JavaFX ==="
-          curl -L -o javafx-jmods.zip https://download2.gluonhq.com/openjfx/17.0.8/openjfx-17.0.8_windows-x64_bin-jmods.zip
+          curl -L -o javafx-jmods.zip https://download2.gluonhq.com/openjfx/17.0.10/openjfx-17.0.10_windows-x64_bin-jmods.zip
           unzip -q javafx-jmods.zip
-          
-      - name: Create Ultra-Minimal Runtime
+
+      - name: Create Executable Package (Windows)
         shell: bash
         run: |
-          echo "=== Création d'un runtime MINIMAL avec jlink ==="
+          # 1. Préparation d'un dossier d'entrée ISOLÉ
+          # C'est l'étape cruciale pour éviter les installeurs de 3 Go
+          mkdir input_dir
+          cp target/demo2-1.0-SNAPSHOT.jar input_dir/
           
-          # Liste MINIMALE de modules (sans javafx.web qui est énorme)
-          jlink \
-            --module-path "javafx-jmods-17.0.8;$JAVA_HOME/jmods" \
-            --add-modules java.base,java.logging,java.xml,java.desktop,java.sql,java.prefs,java.net.http,javafx.controls,javafx.fxml,javafx.graphics,javafx.media,javafx.swing \
-            --output runtime-minimal \
-            --strip-debug \
-            --strip-native-commands \
-            --no-header-files \
-            --no-man-pages \
-            --compress=2 \
-            --verbose
-            
-          echo ""
-          echo "=== Taille du runtime créé ==="
-          du -sh runtime-minimal
-          
-      - name: Prepare Slim Application Bundle
-        shell: bash
-        run: |
-          echo "=== Préparation du bundle d'application ==="
-          
-          mkdir -p app-bundle
-          
-          # Copier SEULEMENT le JAR (qui contient déjà les dépendances)
-          cp target/demo2-1.0-SNAPSHOT.jar app-bundle/app.jar
-          
-          echo ""
-          echo "=== Contenu du bundle ==="
-          ls -lh app-bundle/
-          
-      - name: Create MSI Installer
-        shell: bash
-        run: |
-          echo "=== Création de l'installeur MSI ==="
-          
+          # 2. Lancement de jpackage
           jpackage \
-            --type msi \
+            --type exe \
             --dest output/ \
             --name "E-Learning-P2P" \
-            --app-version "1.0.0" \
-            --vendor "MonEntreprise" \
-            --description "Plateforme d'apprentissage P2P" \
-            --icon "src/main/resources/images/logo.ico" \
-            --input app-bundle \
-            --main-jar app.jar \
+            --input input_dir/ \
+            --main-jar demo2-1.0-SNAPSHOT.jar \
             --main-class org.example.Main \
-            --runtime-image runtime-minimal \
+            --icon "src/main/resources/images/logo.ico" \
+            --module-path "javafx-jmods-17.0.10/" \
+            --add-modules javafx.controls,javafx.fxml,javafx.graphics,javafx.web,javafx.media,javafx.swing,java.sql,java.net.http \
             --win-dir-chooser \
-            --win-menu \
             --win-shortcut \
-            --win-menu-group "E-Learning P2P" \
-            --verbose 2>&1 | tee jpackage.log
-            
-          echo ""
-          echo "=== Vérification des erreurs ==="
-          if [ -f output/E-Learning-P2P-1.0.0.msi ]; then
-            echo "✅ Installeur créé avec succès !"
-          else
-            echo "❌ Échec de la création de l'installeur"
-            cat jpackage.log
-            exit 1
-          fi
-          
-      - name: Display Build Summary
-        shell: bash
-        run: |
-          echo "=========================================="
-          echo "     RÉSUMÉ DE LA COMPILATION"
-          echo "=========================================="
-          echo ""
-          echo "📦 JAR principal:"
-          ls -lh target/demo2-1.0-SNAPSHOT.jar
-          echo ""
-          echo "🔧 Runtime:"
-          du -sh runtime-minimal
-          echo ""
-          echo "💿 Installeur MSI:"
-          ls -lh output/*.msi
-          echo ""
-          echo "📊 Détails de l'installeur:"
-          du -h output/*.msi
-          
-      - name: Upload Installer
+            --win-menu \
+            --vendor "MonProjet" \
+            --verbose
+
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: E-Learning-P2P-Installer
-          path: output/*.msi
-          
-      - name: Upload Build Logs (if failed)
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Build-Logs
-          path: |
-            jpackage.log
-            target/maven-*.log
+          name: E-Learning-P2P-Windows-Installer
+          path: output/*.exe
