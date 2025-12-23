@@ -22,37 +22,38 @@ jobs:
       - name: Build with Maven (Clean & Light JAR)
         shell: bash
         run: |
-          # On nettoie tout et on génère un JAR sans dépendances internes
+          # Nettoyage total et build du JAR principal uniquement
           mvn clean package -DskipTests -Dshade.skip=true
 
-      - name: Setup JavaFX Modules
+      - name: Create Custom Slim Runtime (jlink)
         shell: bash
         run: |
-          curl -L -o javafx-jmods.zip https://download2.gluonhq.com/openjfx/17.0.10/openjfx-17.0.10_windows-x64_bin-jmods.zip
-          unzip -q javafx-jmods.zip
-
-      - name: Create Executable Package (Windows)
-        shell: bash
-        run: |
-          # 1. Création d'un JRE réduit (Runtime Image) pour limiter la taille
-          # On ne garde que les modules strictement nécessaires
-          jlink \
-            --add-modules java.base,java.sql,java.naming,java.desktop,java.management,java.security.jgss,java.instrument,java.net.http,jdk.unsupported \
+          # On crée un environnement Java minimaliste pour réduire la taille de 3Go à ~50Mo
+          # On inclut les modules de base + ceux nécessaires pour SQL, le réseau et l'interface
+          $JAVA_HOME/bin/jlink \
+            --add-modules java.base,java.sql,java.naming,java.desktop,java.management,java.security.jgss,java.instrument,java.net.http,jdk.unsupported,java.scripting,java.xml,jdk.crypto.ec \
             --strip-debug \
             --no-man-pages \
             --no-header-files \
             --compress=2 \
             --output custom-runtime
 
-          # 2. Préparation du dossier d'entrée
+      - name: Create Executable Package (Windows)
+        shell: bash
+        run: |
+          # 1. Préparation du dossier d'entrée isolé
           mkdir -p final_input
           cp target/demo2-1.0-SNAPSHOT.jar final_input/
           
-          # 3. Copie des libs (GSON, SQLite, PDFBox ET JavaFX)
+          # 2. Copie des dépendances (GSON, SQLite, PDFBox, JavaFX JARs)
           mvn dependency:copy-dependencies -DoutputDirectory=final_input/
           
-          # 4. Lancement de jpackage en utilisant le runtime réduit
-          # L'utilisation de --runtime-image empêche jpackage d'aspirer tout le JDK
+          # 3. Diagnostic de taille (pour vérifier qu'on est bien loin des 2 Go)
+          echo "Taille du dossier final_input :"
+          du -sh final_input/
+
+          # 4. Lancement de jpackage avec le runtime réduit
+          # L'option --runtime-image est CRUCIALE ici
           jpackage \
             --type exe \
             --dest output/ \
