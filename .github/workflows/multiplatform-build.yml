@@ -20,8 +20,9 @@ jobs:
           cache: 'maven'
 
       - name: Build with Maven
-        # Utilisation de guillemets pour éviter l'erreur de "Lifecycle phase" sur PowerShell
-        run: mvn clean package "-DskipTests" "-Dshade.skip=true"
+        # On force l'utilisation de bash pour éviter les erreurs de parsing PowerShell
+        shell: bash
+        run: mvn clean package -DskipTests -Dshade.skip=true
 
       - name: Setup JavaFX Modules
         shell: bash
@@ -32,14 +33,15 @@ jobs:
       - name: Create Executable Installer (.exe)
         shell: bash
         run: |
-          # 1. Isolation des fichiers
+          # 1. Isolation stricte : on ne prend QUE le JAR nécessaire
           mkdir bundle_input
           cp target/demo2-1.0-SNAPSHOT.jar bundle_input/
           
-          # 2. Copie des dépendances (GSON, SQLite, etc.) car on a désactivé le Shade
+          # 2. On copie les dépendances (GSON, SQLite, etc.) car le shade est désactivé
           mvn dependency:copy-dependencies -DoutputDirectory=bundle_input/libs
 
-          # 3. Création de l'installeur avec jpackage
+          # 3. Création de l'installeur
+          # On ajoute javafx.swing qui est présent dans votre pom.xml
           jpackage \
             --type exe \
             --dest output/ \
