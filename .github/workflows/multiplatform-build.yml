@@ -1,65 +1,99 @@
-name: Build Windows Installer
+name: Build Windows Installer (Optimized)
 on: 
   push:
     branches: [ main, master ]
-
 jobs:
   build:
-    name: Build Windows App
+    name: Build Windows Installer
     runs-on: windows-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
+        
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
           cache: 'maven'
-
+          
       - name: Build with Maven
-        # On force l'utilisation de bash pour éviter les erreurs de parsing PowerShell
         shell: bash
-        run: mvn clean package -DskipTests -Dshade.skip=true
-
-      - name: Setup JavaFX Modules
+        run: mvn clean package -DskipTests
+        
+      - name: Download JavaFX JMODs
         shell: bash
         run: |
           curl -L -o javafx-jmods.zip https://download2.gluonhq.com/openjfx/17.0.8/openjfx-17.0.8_windows-x64_bin-jmods.zip
           unzip -q javafx-jmods.zip
-
-      - name: Create Executable Installer (.exe)
+          
+      - name: Create Minimal Runtime with jlink
         shell: bash
         run: |
-          # 1. Isolation stricte : on ne prend QUE le JAR nécessaire
-          mkdir bundle_input
-          cp target/demo2-1.0-SNAPSHOT.jar bundle_input/
+          # Créer un JRE MINIMAL avec SEULEMENT les modules nécessaires
+          jlink \
+            --module-path "javafx-jmods-17.0.8;$JAVA_HOME/jmods" \
+            --add-modules javafx.controls,javafx.fxml,javafx.graphics,javafx.web,javafx.swing,java.net.http,java.sql,java.logging,java.prefs,java.desktop,java.xml \
+            --output custom-runtime \
+            --strip-debug \
+            --no-header-files \
+            --no-man-pages \
+            --compress=2 \
+            --verbose
+            
+          echo "Runtime créé. Taille:"
+          du -sh custom-runtime
           
-          # 2. On copie les dépendances (GSON, SQLite, etc.) car le shade est désactivé
-          mvn dependency:copy-dependencies -DoutputDirectory=bundle_input/libs
-
-          # 3. Création de l'installeur
-          # On ajoute javafx.swing qui est présent dans votre pom.xml
+      - name: Prepare Application Bundle
+        shell: bash
+        run: |
+          mkdir -p app-image/lib
+          
+          # Copier SEULEMENT le JAR principal (qui contient déjà les dépendances grâce au maven-shade-plugin)
+          cp target/demo2-1.0-SNAPSHOT.jar app-image/lib/app.jar
+          
+          # Copier l'icône
+          cp src/main/resources/images/logo.ico app-image/
+          
+          echo "Application bundle préparée. Contenu:"
+          ls -lh app-image/lib/
+          
+      - name: Create MSI Installer
+        shell: bash
+        run: |
           jpackage \
-            --type exe \
+            --type msi \
             --dest output/ \
             --name "E-Learning-P2P" \
-            --input bundle_input/ \
-            --main-jar demo2-1.0-SNAPSHOT.jar \
-            --main-class org.example.Main \
-            --icon "src/main/resources/images/logo.ico" \
-            --module-path "javafx-jmods-17.0.8/;bundle_input/libs" \
-            --add-modules javafx.controls,javafx.fxml,javafx.graphics,javafx.web,javafx.media,javafx.swing,java.net.http,java.sql \
-            --win-dir-chooser \
-            --win-shortcut \
-            --win-menu \
+            --app-version "1.0.0" \
             --vendor "MonEntreprise" \
+            --description "Plateforme d'apprentissage P2P" \
+            --icon "src/main/resources/images/logo.ico" \
+            --input app-image/lib \
+            --main-jar app.jar \
+            --main-class org.example.Main \
+            --runtime-image custom-runtime \
+            --win-dir-chooser \
+            --win-menu \
+            --win-shortcut \
+            --win-menu-group "E-Learning P2P" \
             --verbose
-
-      - name: Upload Artifact
+            
+      - name: Verify Installer
+        shell: bash
+        run: |
+          echo "==========================================="
+          echo "Installeur créé avec succès !"
+          echo "==========================================="
+          echo ""
+          echo "Fichiers générés:"
+          ls -lh output/
+          echo ""
+          echo "Taille de l'installeur:"
+          du -h output/*.msi
+          
+      - name: Upload Installer
         uses: actions/upload-artifact@v4
         with:
           name: E-Learning-P2P-Installer
-          path: output/*.exe
+          path: output/*.msi
