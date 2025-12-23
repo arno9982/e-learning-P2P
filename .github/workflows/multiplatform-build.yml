@@ -34,43 +34,33 @@ jobs:
       - name: Create Executable Package (Windows)
         shell: bash
         run: |
-          # 1. Préparation d'un dossier source TOTALEMENT isolé
-          mkdir -p isolated_input/libs
+          # 1. On repart sur un dossier ultra-propre
+          mkdir -p final_input
           
-          # 2. Copie du JAR principal
-          cp target/demo2-1.0-SNAPSHOT.jar isolated_input/
+          # 2. On copie TOUT dedans (le JAR et TOUTES les libs)
+          cp target/demo2-1.0-SNAPSHOT.jar final_input/
+          mvn dependency:copy-dependencies -DoutputDirectory=final_input/
           
-          # 3. Récupération des dépendances externes
-          mvn dependency:copy-dependencies -DoutputDirectory=isolated_input/libs
-          
-          # 4. NETTOYAGE : Suppression des doublons JavaFX (conflits de taille)
-          rm -f isolated_input/libs/javafx-*.jar
+          # 3. Suppression des JRE/JMODS téléchargés pour ne pas les inclure par erreur
+          rm -rf javafx-jmods-17.0.10/
+          rm -f javafx-jmods.zip
 
-          # 5. DIAGNOSTIC : Afficher la taille du dossier d'entrée dans les logs
-          echo "--- TAILLE DU DOSSIER D'ENTRÉE ---"
-          du -sh isolated_input/
-          echo "--- CONTENU DU DOSSIER ---"
-          ls -R isolated_input/
-
-          # 6. Lancement de jpackage
-          # Note: On utilise --temp pour éviter de saturer le disque du runner
+          # 4. Lancement de jpackage en mode "App-Image" simple
+          # On laisse jpackage utiliser le JRE par défaut du runner
           jpackage \
             --type exe \
             --dest output/ \
             --name "E-Learning-P2P" \
-            --input isolated_input/ \
+            --input final_input/ \
             --main-jar demo2-1.0-SNAPSHOT.jar \
             --main-class org.example.Main \
             --icon "src/main/resources/images/logo.ico" \
-            --module-path "javafx-jmods-17.0.10/;isolated_input/libs" \
-            --add-modules javafx.controls,javafx.fxml,javafx.graphics,javafx.web,javafx.media,javafx.swing,java.sql,java.net.http \
             --win-dir-chooser \
             --win-shortcut \
             --win-menu \
             --vendor "MonEntreprise" \
-            --temp jpackage_temp \
             --verbose
-
+            
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
