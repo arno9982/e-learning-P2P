@@ -19,10 +19,11 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
 
-      - name: Build with Maven
-        # On force un JAR "mince" (sans dépendances à l'intérieur) pour jpackage
+      - name: Build with Maven (Clean & Light JAR)
         shell: bash
-        run: mvn clean package -DskipTests -Dshade.skip=true
+        run: |
+          # On nettoie tout et on génère un JAR sans dépendances internes
+          mvn clean package -DskipTests -Dshade.skip=true
 
       - name: Setup JavaFX Modules
         shell: bash
@@ -33,32 +34,41 @@ jobs:
       - name: Create Executable Package (Windows)
         shell: bash
         run: |
-          # 1. Préparation d'un dossier d'entrée propre
-          mkdir -p input_dir
-          cp target/demo2-1.0-SNAPSHOT.jar input_dir/
+          # 1. Préparation d'un dossier source TOTALEMENT isolé
+          mkdir -p isolated_input/libs
           
-          # 2. Copie les bibliothèques externes
-          mvn dependency:copy-dependencies -DoutputDirectory=input_dir/libs
+          # 2. Copie du JAR principal
+          cp target/demo2-1.0-SNAPSHOT.jar isolated_input/
+          
+          # 3. Récupération des dépendances externes
+          mvn dependency:copy-dependencies -DoutputDirectory=isolated_input/libs
+          
+          # 4. NETTOYAGE : Suppression des doublons JavaFX (conflits de taille)
+          rm -f isolated_input/libs/javafx-*.jar
 
-          # 3. NETTOYAGE CRUCIAL : On supprime les JAR JavaFX du dossier libs 
-          # car ils sont déjà fournis par les JMODS (évite les conflits et le poids inutile)
-          rm -f input_dir/libs/javafx-*.jar
+          # 5. DIAGNOSTIC : Afficher la taille du dossier d'entrée dans les logs
+          echo "--- TAILLE DU DOSSIER D'ENTRÉE ---"
+          du -sh isolated_input/
+          echo "--- CONTENU DU DOSSIER ---"
+          ls -R isolated_input/
 
-          # 4. Lancement de jpackage (sans --strip-debug pour éviter l'erreur)
+          # 6. Lancement de jpackage
+          # Note: On utilise --temp pour éviter de saturer le disque du runner
           jpackage \
             --type exe \
             --dest output/ \
             --name "E-Learning-P2P" \
-            --input input_dir/ \
+            --input isolated_input/ \
             --main-jar demo2-1.0-SNAPSHOT.jar \
             --main-class org.example.Main \
             --icon "src/main/resources/images/logo.ico" \
-            --module-path "javafx-jmods-17.0.10/;input_dir/libs" \
+            --module-path "javafx-jmods-17.0.10/;isolated_input/libs" \
             --add-modules javafx.controls,javafx.fxml,javafx.graphics,javafx.web,javafx.media,javafx.swing,java.sql,java.net.http \
             --win-dir-chooser \
             --win-shortcut \
             --win-menu \
             --vendor "MonEntreprise" \
+            --temp jpackage_temp \
             --verbose
 
       - name: Upload Artifact
