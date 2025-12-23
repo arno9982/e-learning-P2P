@@ -31,18 +31,17 @@ jobs:
       - name: Create Executable Installer (.exe)
         shell: bash
         run: |
-          # 1. Isolation des fichiers pour éviter d'inclure tout le répertoire de build (le bug des 3Go)
-          rm -rf input_dir output
-          mkdir input_dir
-          cp target/demo2-1.0-SNAPSHOT.jar input_dir/
+          # 1. ISOLATION : On crée un dossier propre pour l'entrée
+          # Cela garantit que jpackage ne scanne pas le dossier racine (3.7 Go de résidus)
+          mkdir bundle_input
+          cp target/demo2-1.0-SNAPSHOT.jar bundle_input/
           
-          # 2. Création de l'installeur Windows
-          # On utilise --type exe pour avoir un seul fichier d'installation
+          # 2. GÉNÉRATION : On utilise des chemins absolus ou isolés
           jpackage \
             --type exe \
             --dest output/ \
             --name "E-Learning-P2P" \
-            --input input_dir/ \
+            --input bundle_input/ \
             --main-jar demo2-1.0-SNAPSHOT.jar \
             --main-class org.example.Main \
             --icon "src/main/resources/images/logo.ico" \
@@ -52,12 +51,10 @@ jobs:
             --win-shortcut \
             --win-menu \
             --vendor "MonEntreprise" \
-            --description "Application E-Learning P2P" \
             --verbose
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: E-Learning-P2P-Windows-Installer
-          # On ne récupère que le fichier .exe final
+          name: E-Learning-P2P-Installer
           path: output/*.exe
