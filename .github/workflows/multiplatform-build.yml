@@ -20,7 +20,7 @@ jobs:
           cache: 'maven'
 
       - name: Build with Maven
-        # ÉTAPE CLÉ : On saute le Shade pour éviter le JAR monstrueux
+        # On force un JAR "mince" (sans dépendances à l'intérieur) pour jpackage
         shell: bash
         run: mvn clean package -DskipTests -Dshade.skip=true
 
@@ -33,14 +33,14 @@ jobs:
       - name: Create Executable Package (Windows)
         shell: bash
         run: |
-          # 1. On isole le JAR léger
+          # 1. Préparation d'un dossier d'entrée propre
           mkdir -p input_dir
           cp target/demo2-1.0-SNAPSHOT.jar input_dir/
           
-          # 2. On récupère les dépendances (GSON, SQLite...) proprement
+          # 2. Copie les bibliothèques externes (SQLite, GSON...) séparément
           mvn dependency:copy-dependencies -DoutputDirectory=input_dir/libs
 
-          # 3. Lancement de jpackage
+          # 3. Lancement de jpackage optimisé
           jpackage \
             --type exe \
             --dest output/ \
@@ -54,7 +54,7 @@ jobs:
             --win-dir-chooser \
             --win-shortcut \
             --win-menu \
-            --vendor "MonProjet" \
+            --vendor "MonEntreprise" \
             --strip-debug \
             --no-header-files \
             --verbose
@@ -62,5 +62,5 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: E-Learning-P2P-Windows-Installer
+          name: E-Learning-P2P-Installer
           path: output/*.exe
