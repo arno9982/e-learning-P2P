@@ -19,10 +19,9 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
 
-      - name: Build with Maven (No Shade)
-        # On utilise -Dmaven.main.skip=false pour assurer la compilation
-        # On peut désactiver le shade plugin ici pour éviter le JAR géant
-        run: mvn clean package -DskipTests -Dshade.skip=true
+      - name: Build with Maven
+        # Utilisation de guillemets pour éviter l'erreur de "Lifecycle phase" sur PowerShell
+        run: mvn clean package "-DskipTests" "-Dshade.skip=true"
 
       - name: Setup JavaFX Modules
         shell: bash
@@ -33,15 +32,14 @@ jobs:
       - name: Create Executable Installer (.exe)
         shell: bash
         run: |
-          # 1. Isolation stricte dans un dossier dédié
+          # 1. Isolation des fichiers
           mkdir bundle_input
-          # On prend le JAR standard (pas le shaded)
           cp target/demo2-1.0-SNAPSHOT.jar bundle_input/
           
-          # 2. On récupère les dépendances Maven pour jpackage (nécessaire sans Shade)
+          # 2. Copie des dépendances (GSON, SQLite, etc.) car on a désactivé le Shade
           mvn dependency:copy-dependencies -DoutputDirectory=bundle_input/libs
 
-          # 3. Création de l'installeur
+          # 3. Création de l'installeur avec jpackage
           jpackage \
             --type exe \
             --dest output/ \
