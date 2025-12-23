@@ -37,10 +37,14 @@ jobs:
           mkdir -p input_dir
           cp target/demo2-1.0-SNAPSHOT.jar input_dir/
           
-          # 2. Copie les bibliothèques externes (SQLite, GSON...) séparément
+          # 2. Copie les bibliothèques externes
           mvn dependency:copy-dependencies -DoutputDirectory=input_dir/libs
 
-          # 3. Lancement de jpackage optimisé
+          # 3. NETTOYAGE CRUCIAL : On supprime les JAR JavaFX du dossier libs 
+          # car ils sont déjà fournis par les JMODS (évite les conflits et le poids inutile)
+          rm -f input_dir/libs/javafx-*.jar
+
+          # 4. Lancement de jpackage (sans --strip-debug pour éviter l'erreur)
           jpackage \
             --type exe \
             --dest output/ \
@@ -55,8 +59,6 @@ jobs:
             --win-shortcut \
             --win-menu \
             --vendor "MonEntreprise" \
-            --strip-debug \
-            --no-header-files \
             --verbose
 
       - name: Upload Artifact
