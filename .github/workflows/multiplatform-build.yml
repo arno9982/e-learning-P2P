@@ -19,8 +19,10 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
 
-      - name: Build with Maven
-        run: mvn clean package -DskipTests
+      - name: Build with Maven (No Shade)
+        # On utilise -Dmaven.main.skip=false pour assurer la compilation
+        # On peut désactiver le shade plugin ici pour éviter le JAR géant
+        run: mvn clean package -DskipTests -Dshade.skip=true
 
       - name: Setup JavaFX Modules
         shell: bash
@@ -31,12 +33,15 @@ jobs:
       - name: Create Executable Installer (.exe)
         shell: bash
         run: |
-          # 1. ISOLATION : On crée un dossier propre pour l'entrée
-          # Cela garantit que jpackage ne scanne pas le dossier racine (3.7 Go de résidus)
+          # 1. Isolation stricte dans un dossier dédié
           mkdir bundle_input
+          # On prend le JAR standard (pas le shaded)
           cp target/demo2-1.0-SNAPSHOT.jar bundle_input/
           
-          # 2. GÉNÉRATION : On utilise des chemins absolus ou isolés
+          # 2. On récupère les dépendances Maven pour jpackage (nécessaire sans Shade)
+          mvn dependency:copy-dependencies -DoutputDirectory=bundle_input/libs
+
+          # 3. Création de l'installeur
           jpackage \
             --type exe \
             --dest output/ \
@@ -45,8 +50,8 @@ jobs:
             --main-jar demo2-1.0-SNAPSHOT.jar \
             --main-class org.example.Main \
             --icon "src/main/resources/images/logo.ico" \
-            --module-path "javafx-jmods-17.0.8/" \
-            --add-modules javafx.controls,javafx.fxml,javafx.graphics,javafx.web,javafx.media,java.net.http,java.sql \
+            --module-path "javafx-jmods-17.0.8/;bundle_input/libs" \
+            --add-modules javafx.controls,javafx.fxml,javafx.graphics,javafx.web,javafx.media,javafx.swing,java.net.http,java.sql \
             --win-dir-chooser \
             --win-shortcut \
             --win-menu \
