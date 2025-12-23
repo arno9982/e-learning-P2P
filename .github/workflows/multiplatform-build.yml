@@ -20,8 +20,9 @@ jobs:
           cache: 'maven'
 
       - name: Build with Maven
-        # On utilise le Shade plugin pour créer un JAR exécutable unique
-        run: mvn clean package -DskipTests
+        # ÉTAPE CLÉ : On saute le Shade pour éviter le JAR monstrueux
+        shell: bash
+        run: mvn clean package -DskipTests -Dshade.skip=true
 
       - name: Setup JavaFX Modules
         shell: bash
@@ -32,12 +33,14 @@ jobs:
       - name: Create Executable Package (Windows)
         shell: bash
         run: |
-          # 1. Préparation d'un dossier d'entrée ISOLÉ
-          # C'est l'étape cruciale pour éviter les installeurs de 3 Go
-          mkdir input_dir
+          # 1. On isole le JAR léger
+          mkdir -p input_dir
           cp target/demo2-1.0-SNAPSHOT.jar input_dir/
           
-          # 2. Lancement de jpackage
+          # 2. On récupère les dépendances (GSON, SQLite...) proprement
+          mvn dependency:copy-dependencies -DoutputDirectory=input_dir/libs
+
+          # 3. Lancement de jpackage
           jpackage \
             --type exe \
             --dest output/ \
@@ -46,12 +49,14 @@ jobs:
             --main-jar demo2-1.0-SNAPSHOT.jar \
             --main-class org.example.Main \
             --icon "src/main/resources/images/logo.ico" \
-            --module-path "javafx-jmods-17.0.10/" \
+            --module-path "javafx-jmods-17.0.10/;input_dir/libs" \
             --add-modules javafx.controls,javafx.fxml,javafx.graphics,javafx.web,javafx.media,javafx.swing,java.sql,java.net.http \
             --win-dir-chooser \
             --win-shortcut \
             --win-menu \
             --vendor "MonProjet" \
+            --strip-debug \
+            --no-header-files \
             --verbose
 
       - name: Upload Artifact
