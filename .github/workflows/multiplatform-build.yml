@@ -34,19 +34,25 @@ jobs:
       - name: Create Executable Package (Windows)
         shell: bash
         run: |
-          # 1. On repart sur un dossier ultra-propre
+          # 1. Création d'un JRE réduit (Runtime Image) pour limiter la taille
+          # On ne garde que les modules strictement nécessaires
+          jlink \
+            --add-modules java.base,java.sql,java.naming,java.desktop,java.management,java.security.jgss,java.instrument,java.net.http,jdk.unsupported \
+            --strip-debug \
+            --no-man-pages \
+            --no-header-files \
+            --compress=2 \
+            --output custom-runtime
+
+          # 2. Préparation du dossier d'entrée
           mkdir -p final_input
-          
-          # 2. On copie TOUT dedans (le JAR et TOUTES les libs)
           cp target/demo2-1.0-SNAPSHOT.jar final_input/
+          
+          # 3. Copie des libs (GSON, SQLite, PDFBox ET JavaFX)
           mvn dependency:copy-dependencies -DoutputDirectory=final_input/
           
-          # 3. Suppression des JRE/JMODS téléchargés pour ne pas les inclure par erreur
-          rm -rf javafx-jmods-17.0.10/
-          rm -f javafx-jmods.zip
-
-          # 4. Lancement de jpackage en mode "App-Image" simple
-          # On laisse jpackage utiliser le JRE par défaut du runner
+          # 4. Lancement de jpackage en utilisant le runtime réduit
+          # L'utilisation de --runtime-image empêche jpackage d'aspirer tout le JDK
           jpackage \
             --type exe \
             --dest output/ \
@@ -54,13 +60,14 @@ jobs:
             --input final_input/ \
             --main-jar demo2-1.0-SNAPSHOT.jar \
             --main-class org.example.Main \
+            --runtime-image custom-runtime \
             --icon "src/main/resources/images/logo.ico" \
             --win-dir-chooser \
             --win-shortcut \
             --win-menu \
             --vendor "MonEntreprise" \
             --verbose
-            
+
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
